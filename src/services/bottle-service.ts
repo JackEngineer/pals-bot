@@ -1,6 +1,7 @@
 import { dbGet, dbAll, dbRun, dbExecuteInTransaction, Bottle, Reply, UserStats } from './database';
 import { v4 as uuidv4 } from 'uuid';
 import { PointsService } from './points-service';
+import { NotificationService } from './notification-service';
 import { logger } from '../utils/logger';
 
 export class BottleService {
@@ -169,7 +170,7 @@ export class BottleService {
                 data.senderUsername
             );
 
-            // 获取原瓶子信息，给原作者积分
+            // 获取原瓶子信息，给原作者积分并发送通知
             const bottle = await dbGet(`SELECT * FROM bottles WHERE id = ?`, [data.bottleId]) as Bottle | null;
             if (bottle) {
                 await PointsService.addPoints(
@@ -179,6 +180,25 @@ export class BottleService {
                     '收到漂流瓶回复',
                     replyId
                 );
+
+                // 🎉 新增：发送通知给原作者
+                try {
+                    await NotificationService.sendBottleReplyNotification(
+                        bottle.sender_id,
+                        {
+                            bottleId: data.bottleId,
+                            replyContent: data.content,
+                            replierUsername: data.senderUsername,
+                            replierId: data.senderId,
+                            mediaType: data.mediaType,
+                            mediaFileId: data.mediaFileId
+                        }
+                    );
+                    logger.info(`回复通知发送成功: 瓶子${data.bottleId} -> 用户${bottle.sender_id}`);
+                } catch (notificationError) {
+                    logger.error(`发送回复通知失败: ${notificationError}`);
+                    // 即使通知发送失败，也不影响回复功能的正常运行
+                }
 
                 // 检查是否达到人气瓶子成就（10个回复）
                 const replyCount = await dbGet(`
@@ -231,6 +251,14 @@ export class BottleService {
             WHERE bottle_id = ?
             ORDER BY created_at ASC
         `, [bottleId]) as Reply[];
+    }
+
+    // 根据ID获取漂流瓶
+    static async getBottleById(bottleId: string): Promise<Bottle | null> {
+        return await dbGet(`
+            SELECT * FROM bottles 
+            WHERE id = ?
+        `, [bottleId]) as Bottle | null;
     }
 
     // 获取用户统计（增强版，包含积分信息）

@@ -250,15 +250,40 @@ const initializeTables = async (): Promise<void> => {
         // 用户成就记录表
         await run(`
             CREATE TABLE IF NOT EXISTS user_achievements (
-                id TEXT PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 achievement_id TEXT NOT NULL,
                 achievement_name TEXT NOT NULL,
-                reward_points INTEGER NOT NULL,
+                reward_points INTEGER NOT NULL DEFAULT 0,
                 unlocked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES user_points (user_id),
-                FOREIGN KEY (achievement_id) REFERENCES achievements (id),
                 UNIQUE(user_id, achievement_id)
+            )
+        `);
+
+        // 聊天会话表
+        await run(`
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY,
+                user1_id INTEGER NOT NULL,
+                user2_id INTEGER NOT NULL,
+                bottle_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                ended_at DATETIME,
+                FOREIGN KEY (bottle_id) REFERENCES bottles (id)
+            )
+        `);
+
+        // 聊天消息表（可选，用于统计）
+        await run(`
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                sender_id INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                media_type TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (session_id) REFERENCES chat_sessions (id)
             )
         `);
 
@@ -272,6 +297,10 @@ const initializeTables = async (): Promise<void> => {
         await run(`CREATE INDEX IF NOT EXISTS idx_user_purchases_user ON user_purchases (user_id, status)`);
         await run(`CREATE INDEX IF NOT EXISTS idx_shop_items_category ON points_shop_items (category, is_active)`);
         await run(`CREATE INDEX IF NOT EXISTS idx_user_achievements_user ON user_achievements (user_id)`);
+
+        // 创建聊天相关索引
+        await run(`CREATE INDEX IF NOT EXISTS idx_chat_sessions_users ON chat_sessions (user1_id, user2_id, status)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages (session_id)`);
 
         // 插入默认数据
         await insertDefaultData(run);

@@ -9,6 +9,7 @@ import { setupDatabase } from './services/database';
 import { setupLogger } from './utils/logger';
 import { BottleService } from './services/bottle-service';
 import { PointsService } from './services/points-service';
+import { NotificationService } from './services/notification-service';
 import { Scheduler } from './utils/scheduler';
 import { setupCommands } from './bot/commands';
 import { setupHandlers } from './bot/handlers';
@@ -123,6 +124,9 @@ class PalsBot {
     private setupBot() {
         try {
             logger.info('开始设置机器人...');
+            
+            // 设置通知服务的bot实例
+            NotificationService.setBotInstance(this.bot);
             
             // 设置命令
             setupCommands(this.bot);

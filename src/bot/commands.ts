@@ -1,6 +1,8 @@
 import { Telegraf, Context } from 'telegraf';
 import { BottleService } from '../services/bottle-service';
 import { PointsService } from '../services/points-service';
+import { ChatService } from '../services/chat-service';
+import { NotificationService } from '../services/notification-service';
 import { 
     formatBottleMessage, 
     formatUserStats, 
@@ -637,7 +639,134 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                 return;
             }
 
-            // 回复漂流瓶按钮
+            const userId = ctx.from?.id;
+            const username = ctx.from?.username;
+
+            if (!userId) {
+                await ctx.answerCbQuery('❌ 无法获取用户信息');
+                return;
+            }
+
+            // 发起聊天按钮
+            if (callbackData.startsWith('start_chat_')) {
+                const parts = callbackData.split('_');
+                const bottleId = parts[2];
+                const replierId = parseInt(parts[3]);
+                
+                await ctx.answerCbQuery();
+                
+                // 编辑原消息，移除按钮
+                await ctx.editMessageReplyMarkup({
+                    inline_keyboard: []
+                });
+                
+                // 发送聊天邀请给回复者
+                try {
+                    await NotificationService.sendChatInviteNotification(
+                        replierId,
+                        {
+                            initiatorId: userId,
+                            initiatorUsername: username,
+                            bottleId: bottleId
+                        }
+                    );
+                    
+                    await ctx.reply(
+                        `💌 聊天邀请已发送！\n\n` +
+                        `我已经向对方发送了聊天邀请，请耐心等待回复～\n` +
+                        `如果对方同意，我会立即通知你开始聊天 ✨`
+                    );
+                } catch (error) {
+                    logger.error('发送聊天邀请失败:', error);
+                    await ctx.reply('❌ 发送聊天邀请失败，请稍后重试');
+                }
+                
+                return;
+            }
+
+            // 忽略回复按钮
+            if (callbackData.startsWith('ignore_reply_')) {
+                await ctx.answerCbQuery('已忽略这次回复');
+                
+                // 编辑原消息，移除按钮
+                await ctx.editMessageReplyMarkup({
+                    inline_keyboard: []
+                });
+                
+                await ctx.reply('🙈 你选择忽略了这次回复\n\n海上还有更多漂流瓶等着你去发现！');
+                return;
+            }
+
+            // 接受聊天按钮
+            if (callbackData.startsWith('accept_chat_')) {
+                const parts = callbackData.split('_');
+                const bottleId = parts[2];
+                const initiatorId = parseInt(parts[3]);
+                
+                await ctx.answerCbQuery();
+                
+                // 编辑原消息，移除按钮
+                await ctx.editMessageReplyMarkup({
+                    inline_keyboard: []
+                });
+                
+                try {
+                    // 创建聊天会话
+                    const sessionId = await ChatService.createChatSession(initiatorId, userId, bottleId);
+                    
+                    // 通知双方聊天开始
+                    await Promise.all([
+                        NotificationService.sendChatAcceptedNotification(initiatorId, username),
+                        NotificationService.sendChatAcceptedNotification(userId, undefined)
+                    ]);
+                    
+                    await ctx.reply(
+                        `🎉 聊天已开始！\n\n` +
+                        `现在你们可以通过我进行匿名聊天了\n` +
+                        `📝 直接发送消息，我会转发给对方\n` +
+                        `🔚 发送 /endchat 结束聊天\n\n` +
+                        `开始你们的对话吧～ ✨`
+                    );
+                    
+                } catch (error) {
+                    logger.error('接受聊天失败:', error);
+                    await ctx.reply('❌ 接受聊天失败，请稍后重试');
+                }
+                
+                return;
+            }
+
+            // 拒绝聊天按钮
+            if (callbackData.startsWith('decline_chat_')) {
+                const parts = callbackData.split('_');
+                const initiatorId = parseInt(parts[3]);
+                
+                await ctx.answerCbQuery();
+                
+                // 编辑原消息，移除按钮
+                await ctx.editMessageReplyMarkup({
+                    inline_keyboard: []
+                });
+                
+                try {
+                    // 通知发起者被拒绝
+                    await NotificationService.sendChatDeclinedNotification(initiatorId, username);
+                    
+                    await ctx.reply(
+                        `😌 你礼貌地拒绝了聊天邀请\n\n` +
+                        `没关系，每个人都有选择的权利\n` +
+                        `继续你的漂流瓶之旅吧 🌊`
+                    );
+                    
+                } catch (error) {
+                    logger.error('拒绝聊天通知失败:', error);
+                    await ctx.reply('操作已完成');
+                }
+                
+                return;
+            }
+
+            // 回复漂流瓶按钮（保留原有逻辑）
             if (callbackData.startsWith('reply_')) {
                 const bottleId = callbackData.replace('reply_', '');
                 
@@ -652,7 +781,7 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                 // 提示用户输入回复内容
                 await ctx.reply(
                     `💬 请发送你的回复内容:\n\n` +
-                    `你的回复将发送给瓶子 #${bottleId} 的主人\n` +
+                    `你的回复将发送给瓶子 #${bottleId.slice(-8)} 的主人\n` +
                     `📝 可以发送文字、图片、语音等任何内容`,
                     {
                         reply_markup: {
@@ -663,10 +792,7 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                 );
                 
                 // 保存待回复的瓶子ID
-                if (ctx.from?.id) {
-                    pendingReplies.set(ctx.from.id, bottleId);
-                }
-                
+                pendingReplies.set(userId, bottleId);
                 return;
             }
 
@@ -680,12 +806,6 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                 });
                 
                 // 自动执行捡拾命令
-                const userId = ctx.from?.id;
-                if (!userId) {
-                    await ctx.reply('❌ 无法获取用户信息');
-                    return;
-                }
-
                 const bottle = await BottleService.pickBottle(userId);
                 
                 if (!bottle) {
@@ -746,7 +866,54 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
         }
     });
 
-    // 处理回复消息（当用户点击回复按钮后发送的消息）
+    // 结束聊天命令
+    bot.command('endchat', async (ctx) => {
+        try {
+            const userId = ctx.from?.id;
+            
+            if (!userId) {
+                await ctx.reply('❌ 无法获取用户信息');
+                return;
+            }
+
+            const isInChat = await ChatService.isUserInChat(userId);
+            
+            if (!isInChat) {
+                await ctx.reply('🤔 你当前没有进行中的聊天会话');
+                return;
+            }
+
+            // 获取聊天伙伴
+            const activeChat = await ChatService.getActiveChat(userId);
+            if (activeChat) {
+                const partnerId = activeChat.user1_id === userId ? activeChat.user2_id : activeChat.user1_id;
+                
+                // 结束聊天会话
+                await ChatService.endChatSession(userId);
+                
+                // 通知双方聊天结束
+                await Promise.all([
+                    ctx.reply(
+                        `👋 聊天已结束\n\n` +
+                        `感谢这次愉快的交流！\n` +
+                        `继续探索更多漂流瓶吧 🌊`
+                    ),
+                    NotificationService.sendMessage(
+                        partnerId,
+                        `👋 对方结束了聊天\n\n` +
+                        `感谢这次愉快的交流！\n` +
+                        `继续探索更多漂流瓶吧 🌊`
+                    )
+                ]);
+            }
+
+        } catch (error) {
+            logger.error('结束聊天失败:', error);
+            await ctx.reply('❌ 结束聊天失败，请稍后重试');
+        }
+    });
+
+    // 处理聊天消息转发
     bot.on('message', async (ctx, next) => {
         try {
             const userId = ctx.from?.id;
@@ -754,6 +921,78 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
             
             if (!userId) {
                 return next();
+            }
+
+            // 首先检查是否在聊天会话中
+            const isInChat = await ChatService.isUserInChat(userId);
+            
+            if (isInChat) {
+                const activeChat = await ChatService.getActiveChat(userId);
+                if (activeChat) {
+                    const partnerId = activeChat.user1_id === userId ? activeChat.user2_id : activeChat.user1_id;
+                    const senderDisplay = username ? `@${username}` : '匿名用户';
+                    
+                    const message = ctx.message as any;
+                    let messageContent = '';
+                    let mediaType: 'photo' | 'voice' | 'video' | 'document' | undefined = undefined;
+                    let mediaFileId: string | undefined = undefined;
+                    
+                    // 处理不同类型的消息
+                    if ('text' in message) {
+                        messageContent = message.text;
+                        
+                        // 如果是命令，跳过转发
+                        if (messageContent.startsWith('/')) {
+                            return next();
+                        }
+                    } else if ('photo' in message) {
+                        messageContent = message.caption || '[图片消息]';
+                        mediaType = 'photo';
+                        mediaFileId = message.photo[message.photo.length - 1].file_id;
+                    } else if ('voice' in message) {
+                        messageContent = '[语音消息]';
+                        mediaType = 'voice';
+                        mediaFileId = message.voice.file_id;
+                    } else if ('video' in message) {
+                        messageContent = message.caption || '[视频消息]';
+                        mediaType = 'video';
+                        mediaFileId = message.video.file_id;
+                    } else if ('document' in message) {
+                        messageContent = message.caption || `[文档消息: ${message.document.file_name || '未知文件'}]`;
+                        mediaType = 'document';
+                        mediaFileId = message.document.file_id;
+                    } else {
+                        messageContent = '[多媒体消息]';
+                    }
+
+                    // 转发消息给聊天伙伴
+                    try {
+                        await NotificationService.forwardChatMessage(
+                            partnerId,
+                            senderDisplay,
+                            messageContent,
+                            mediaType,
+                            mediaFileId
+                        );
+                        
+                        // 记录聊天消息
+                        await ChatService.logChatMessage(
+                            activeChat.id,
+                            userId,
+                            messageContent,
+                            mediaType
+                        );
+                        
+                        // 匿名消息已发送
+                        await ctx.reply('咻~ 匿名消息已发送，输入 /endchat 可结束聊天');
+                        
+                    } catch (error) {
+                        logger.error('转发聊天消息失败:', error);
+                        await ctx.reply('❌ 消息转发失败，请稍后重试');
+                    }
+                    
+                    return; // 不继续处理其他消息逻辑
+                }
             }
 
             // 检查是否有待回复的瓶子
@@ -764,20 +1003,28 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                 const message = ctx.message as any;
                 if (message.reply_to_message) {
                     let replyContent = '';
+                    let mediaType: 'photo' | 'voice' | 'video' | 'document' | undefined = undefined;
+                    let mediaFileId: string | undefined = undefined;
                     
                     // 处理不同类型的消息
                     if ('text' in message) {
                         replyContent = message.text;
-                    } else if ('caption' in message && message.caption) {
-                        replyContent = message.caption;
+                    } else if ('photo' in message) {
+                        replyContent = message.caption || '[图片消息]';
+                        mediaType = 'photo';
+                        mediaFileId = message.photo[message.photo.length - 1].file_id;
                     } else if ('voice' in message) {
                         replyContent = '[语音消息]';
-                    } else if ('photo' in message) {
-                        replyContent = '[图片消息]';
+                        mediaType = 'voice';
+                        mediaFileId = message.voice.file_id;
                     } else if ('video' in message) {
-                        replyContent = '[视频消息]';
+                        replyContent = message.caption || '[视频消息]';
+                        mediaType = 'video';
+                        mediaFileId = message.video.file_id;
                     } else if ('document' in message) {
-                        replyContent = '[文档消息]';
+                        replyContent = message.caption || `[文档消息: ${message.document.file_name || '未知文件'}]`;
+                        mediaType = 'document';
+                        mediaFileId = message.document.file_id;
                     } else {
                         replyContent = '[多媒体消息]';
                     }
@@ -787,7 +1034,9 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                             bottleId,
                             senderId: userId,
                             senderUsername: username,
-                            content: replyContent
+                            content: replyContent,
+                            mediaType,
+                            mediaFileId
                         });
 
                         await ctx.reply(formatReplySuccess(bottleId));
@@ -803,8 +1052,8 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
             return next();
 
         } catch (error) {
-            logger.error('处理回复消息失败:', error);
-            await ctx.reply('❌ 回复失败，请稍后重试');
+            logger.error('处理消息失败:', error);
+            await ctx.reply('❌ 处理消息失败，请稍后重试');
         }
     });
 

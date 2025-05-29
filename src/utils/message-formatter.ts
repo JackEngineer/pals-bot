@@ -6,11 +6,13 @@ moment.locale('zh-cn');
 
 export function formatBottleMessage(bottle: Bottle): string {
     const timeAgo = moment(bottle.created_at).fromNow();
+    // const senderUsername = bottle.sender_username ? `@${bottle.sender_username}` : '匿名用户';
+    const senderUsername = '匿名用户';
     
     return (
         `🍾 你捡到了一个漂流瓶！\n\n` +
         `📝 内容: ${bottle.content}\n` +
-        `👤 来自: ${bottle.sender_username ? `@${bottle.sender_username}` : '匿名用户'}\n` +
+        `👤 来自: ${senderUsername}\n` +
         `⏰ 投放时间: ${timeAgo}\n` +
         `🆔 瓶子编号: ${bottle.id}\n\n` +
         `这个漂流瓶在大海中漂流了 ${timeAgo}，现在被你捡到了！ 🌊\n` +
@@ -109,6 +111,13 @@ export function formatHelpMessage(): string {
         `• /reply <瓶子ID> <内容> - 回复漂流瓶 (+8积分)\n` +
         `• 直接发送消息也可以投放漂流瓶\n\n` +
         
+        `💬 全新聊天功能:\n` +
+        `• 🔔 收到回复时立即通知原作者\n` +
+        `• 💌 可选择"发起聊天"或"忽略"回复\n` +
+        `• 🎭 支持匿名实时聊天\n` +
+        `• 📱 多媒体消息转发\n` +
+        `• /endchat - 结束当前聊天会话\n\n` +
+        
         `💰 积分系统:\n` +
         `• /points - 查看积分和等级\n` +
         `• /checkin - 每日签到 (+5积分起)\n` +
@@ -134,7 +143,7 @@ export function formatHelpMessage(): string {
         `• 投放漂流瓶: +10积分\n` +
         `• 捡拾漂流瓶: +5积分\n` +
         `• 回复漂流瓶: +8积分\n` +
-        `• 收到回复: +3积分\n` +
+        `• 收到回复: +3积分 (含通知 🔔)\n` +
         `• 每日签到: +5积分起（等级越高越多）\n` +
         `• 深夜活跃: 1.5倍积分 (22:00-06:00)\n` +
         `• 周末活跃: 1.2倍积分\n` +
@@ -148,12 +157,26 @@ export function formatHelpMessage(): string {
         `• 🎨彩色消息: 50积分 (7天)\n` +
         `• 💫双倍积分卡: 250积分 (24小时)\n\n` +
         
+        `📢 聊天功能亮点:\n` +
+        `• 🔔 实时回复通知 - 有人回复你的漂流瓶时立即收到通知\n` +
+        `• 💌 聊天邀请系统 - 可选择与回复者进一步交流\n` +
+        `• 🎭 匿名聊天保护 - 通过机器人中转，保护隐私\n` +
+        `• 📱 多媒体支持 - 图片、语音、视频、文档都能传递\n` +
+        `• 🚪 自由进出 - 随时可以结束聊天或拒绝邀请\n\n` +
+        
+        `🌊 聊天流程:\n` +
+        `1. 投放漂流瓶 → 2. 有人回复 → 3. 收到通知\n` +
+        `4. 选择"发起聊天"或"忽略" → 5. 对方接受/拒绝\n` +
+        `6. 开始匿名聊天 → 7. 随时 /endchat 结束\n\n` +
+        
         `注意事项:\n` +
         `• 不能捡拾自己投放的漂流瓶\n` +
         `• 每天基础投放限制: ${parseInt(process.env.MAX_BOTTLES_PER_DAY || '5')} 个\n` +
-        `• VIP用户和购买特权可增加投放次数\n\n` +
+        `• VIP用户和购买特权可增加投放次数\n` +
+        `• 聊天是匿名的，尊重对方隐私\n` +
+        `• 可以随时拒绝聊天邀请\n\n` +
         
-        `开始你的漂流瓶之旅吧！ 🚀`
+        `开始你的漂流瓶之旅，遇见更多有趣的朋友吧！ 🚀`
     );
 }
 
