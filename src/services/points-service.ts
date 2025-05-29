@@ -13,6 +13,20 @@ import {
 } from '../types';
 import { logger } from '../utils/logger';
 
+// 生成中国时区的时间戳字符串
+const getCurrentTimestamp = (): string => {
+    return new Date().toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    }).replace(/\//g, '-');
+};
+
 export class PointsService {
     // 等级配置
     private static readonly LEVEL_CONFIG: ILevelConfig[] = [
@@ -99,10 +113,11 @@ export class PointsService {
             `, [userId]) as IUserPoints;
         } else if (username && !userPoints.username) {
             // 如果用户记录存在但没有用户名，更新用户名
+            const currentTime = getCurrentTimestamp();
             await dbRun(`
-                UPDATE user_points SET username = ?, updated_at = CURRENT_TIMESTAMP
+                UPDATE user_points SET username = ?, updated_at = ?
                 WHERE user_id = ?
-            `, [username, userId]);
+            `, [username, currentTime, userId]);
             userPoints.username = username;
         }
 
@@ -173,11 +188,12 @@ export class PointsService {
             `, [transactionId, userId, -amount, action, description, referenceId]);
 
             // 更新用户积分
+            const currentTime = getCurrentTimestamp();
             await dbRun(`
                 UPDATE user_points 
-                SET available_points = available_points - ?, updated_at = CURRENT_TIMESTAMP
+                SET available_points = available_points - ?, updated_at = ?
                 WHERE user_id = ?
-            `, [amount, userId]);
+            `, [amount, currentTime, userId]);
 
             logger.info(`用户 ${userId} 消费 ${amount} 积分 (${action})`);
             return true;
@@ -236,11 +252,12 @@ export class PointsService {
             }
 
             // 更新签到记录
+            const currentTime = getCurrentTimestamp();
             await dbRun(`
                 UPDATE user_points 
-                SET daily_checkin_streak = ?, last_checkin_date = ?, updated_at = CURRENT_TIMESTAMP
+                SET daily_checkin_streak = ?, last_checkin_date = ?, updated_at = ?
                 WHERE user_id = ?
-            `, [newStreak, today, userId]);
+            `, [newStreak, today, currentTime, userId]);
 
             // 添加积分
             let description = `每日签到 (连续${newStreak}天)`;
@@ -283,26 +300,28 @@ export class PointsService {
             await this.getUserPoints(userId, username);
             
             // 更新积分
+            const currentTime = getCurrentTimestamp();
             await dbRun(`
                 UPDATE user_points 
                 SET 
                     total_points = total_points + ?,
                     available_points = available_points + ?,
                     username = COALESCE(?, username),
-                    updated_at = CURRENT_TIMESTAMP
+                    updated_at = ?
                 WHERE user_id = ?
-            `, [pointsChange, pointsChange, username, userId]);
+            `, [pointsChange, pointsChange, username, currentTime, userId]);
 
             // 检查等级更新
             const userPoints = await this.getUserPoints(userId);
             const newLevel = this.calculateLevel(userPoints.total_points);
             
             if (newLevel.level !== userPoints.level) {
+                const levelUpdateTime = getCurrentTimestamp();
                 await dbRun(`
                     UPDATE user_points 
-                    SET level = ?, level_name = ?, updated_at = CURRENT_TIMESTAMP
+                    SET level = ?, level_name = ?, updated_at = ?
                     WHERE user_id = ?
-                `, [newLevel.level, newLevel.name, userId]);
+                `, [newLevel.level, newLevel.name, levelUpdateTime, userId]);
 
                 logger.info(`用户 ${userId} 升级到 ${newLevel.name}`);
             }
@@ -373,11 +392,12 @@ export class PointsService {
 
     // 检查用户购买的特权
     static async checkUserPurchase(userId: number, itemId: string): Promise<boolean> {
+        const currentTime = getCurrentTimestamp();
         const purchase = await dbGet(`
             SELECT * FROM user_purchases 
             WHERE user_id = ? AND item_id = ? AND status = 'active'
-            AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
-        `, [userId, itemId]);
+            AND (expires_at IS NULL OR expires_at > ?)
+        `, [userId, itemId, currentTime]);
         
         return !!purchase;
     }
@@ -459,11 +479,12 @@ export class PointsService {
 
             // 特殊处理VIP购买
             if (itemId === 'vip_member_30d') {
+                const vipUpdateTime = getCurrentTimestamp();
                 await dbRun(`
                     UPDATE user_points 
-                    SET vip_expires_at = ?, updated_at = CURRENT_TIMESTAMP
+                    SET vip_expires_at = ?, updated_at = ?
                     WHERE user_id = ?
-                `, [expiresAt, userId]);
+                `, [expiresAt, vipUpdateTime, userId]);
             }
 
             const purchase = await dbGet(`
@@ -614,21 +635,23 @@ export class PointsService {
     // 清理过期购买记录
     static async cleanupExpiredPurchases(): Promise<void> {
         try {
+            const currentTime = getCurrentTimestamp();
+            
             await dbRun(`
                 UPDATE user_purchases 
-                SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+                SET status = 'expired', updated_at = ?
                 WHERE status = 'active' 
                 AND expires_at IS NOT NULL 
-                AND expires_at <= CURRENT_TIMESTAMP
-            `);
+                AND expires_at <= ?
+            `, [currentTime, currentTime]);
 
             // 清理过期VIP状态
             await dbRun(`
                 UPDATE user_points 
-                SET vip_expires_at = NULL, updated_at = CURRENT_TIMESTAMP
+                SET vip_expires_at = NULL, updated_at = ?
                 WHERE vip_expires_at IS NOT NULL 
-                AND vip_expires_at <= CURRENT_TIMESTAMP
-            `);
+                AND vip_expires_at <= ?
+            `, [currentTime, currentTime]);
 
             logger.info('清理过期购买记录完成');
         } catch (error) {

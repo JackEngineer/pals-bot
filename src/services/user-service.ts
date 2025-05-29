@@ -1,6 +1,20 @@
 import { dbGet, dbRun } from './database';
 import { logger } from '../utils/logger';
 
+// 生成中国时区的时间戳字符串
+const getCurrentTimestamp = (): string => {
+    return new Date().toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    }).replace(/\//g, '-');
+};
+
 export interface UserInfo {
     user_id: number;
     username?: string;
@@ -36,11 +50,12 @@ export class UserService {
             } else if (userInfo && telegramUser) {
                 // 更新现有用户信息
                 const displayName = this.generateDisplayName(telegramUser);
+                const currentTime = getCurrentTimestamp();
                 await dbRun(`
                     UPDATE user_info 
-                    SET username = ?, first_name = ?, last_name = ?, display_name = ?, updated_at = CURRENT_TIMESTAMP
+                    SET username = ?, first_name = ?, last_name = ?, display_name = ?, updated_at = ?
                     WHERE user_id = ?
-                `, [telegramUser.username, telegramUser.first_name, telegramUser.last_name, displayName, userId]);
+                `, [telegramUser.username, telegramUser.first_name, telegramUser.last_name, displayName, currentTime, userId]);
 
                 userInfo = { ...userInfo, ...telegramUser, display_name: displayName };
             }
@@ -121,11 +136,12 @@ export class UserService {
     }): Promise<boolean> {
         try {
             const displayName = this.generateDisplayName(telegramUser);
+            const currentTime = getCurrentTimestamp();
             
             await dbRun(`
                 INSERT OR REPLACE INTO user_info (user_id, username, first_name, last_name, display_name, updated_at)
-                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            `, [userId, telegramUser.username, telegramUser.first_name, telegramUser.last_name, displayName]);
+                VALUES (?, ?, ?, ?, ?, ?)
+            `, [userId, telegramUser.username, telegramUser.first_name, telegramUser.last_name, displayName, currentTime]);
             
             return true;
         } catch (error) {

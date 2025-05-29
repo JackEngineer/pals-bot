@@ -1,6 +1,20 @@
 import { dbGet, dbRun, dbAll } from './database';
 import { logger } from '../utils/logger';
 
+// 生成中国时区的时间戳字符串
+const getCurrentTimestamp = (): string => {
+    return new Date().toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    }).replace(/\//g, '-');
+};
+
 export interface FriendRequest {
     id: number;
     requester_id: number;
@@ -72,11 +86,12 @@ export class FriendService {
 
             try {
                 // 更新申请状态
+                const currentTime = getCurrentTimestamp();
                 await dbRun(`
                     UPDATE friend_requests 
-                    SET status = 'accepted', updated_at = CURRENT_TIMESTAMP
+                    SET status = 'accepted', updated_at = ?
                     WHERE id = ?
-                `, [requestId]);
+                `, [currentTime, requestId]);
 
                 // 创建好友关系 (确保 user1_id < user2_id)
                 const [user1, user2] = request.requester_id < request.target_id 
@@ -105,11 +120,12 @@ export class FriendService {
     // 拒绝好友申请
     static async rejectFriendRequest(requestId: number): Promise<boolean> {
         try {
+            const currentTime = getCurrentTimestamp();
             const result = await dbRun(`
                 UPDATE friend_requests 
-                SET status = 'rejected', updated_at = CURRENT_TIMESTAMP
+                SET status = 'rejected', updated_at = ?
                 WHERE id = ? AND status = 'pending'
-            `, [requestId]);
+            `, [currentTime, requestId]);
 
             const success = result.changes > 0;
             if (success) {

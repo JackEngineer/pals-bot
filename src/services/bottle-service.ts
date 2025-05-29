@@ -4,6 +4,20 @@ import { PointsService } from './points-service';
 import { NotificationService } from './notification-service';
 import { logger } from '../utils/logger';
 
+// 生成中国时区的时间戳字符串
+const getCurrentTimestamp = (): string => {
+    return new Date().toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    }).replace(/\//g, '-');
+};
+
 export class BottleService {
     // 投放漂流瓶
     static async throwBottle(data: {
@@ -36,11 +50,12 @@ export class BottleService {
             }
 
             const bottleId = uuidv4();
+            const currentTime = getCurrentTimestamp();
             
             await dbRun(`
-                INSERT INTO bottles (id, sender_id, sender_username, content, media_type, media_file_id)
-                VALUES (?, ?, ?, ?, ?, ?)
-            `, [bottleId, data.senderId, data.senderUsername, data.content, data.mediaType, data.mediaFileId]);
+                INSERT INTO bottles (id, sender_id, sender_username, content, media_type, media_file_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            `, [bottleId, data.senderId, data.senderUsername, data.content, data.mediaType, data.mediaFileId, currentTime]);
 
             // 更新用户统计
             await this.updateUserStats(data.senderId, 'throw', data.senderUsername);
@@ -100,12 +115,14 @@ export class BottleService {
                     return null;
                 }
 
+                const currentTime = getCurrentTimestamp();
+
                 // 检查瓶子是否仍然可用（避免并发问题）
                 const updateResult = await dbRun(`
                     UPDATE bottles 
-                    SET picked_at = CURRENT_TIMESTAMP, picked_by = ?, is_active = 0
+                    SET picked_at = ?, picked_by = ?, is_active = 0
                     WHERE id = ? AND is_active = 1
-                `, [userId, bottle.id]);
+                `, [currentTime, userId, bottle.id]);
 
                 // 如果没有更新任何行，说明瓶子已被其他人捡拾
                 if (updateResult.changes === 0) {
@@ -136,7 +153,9 @@ export class BottleService {
             }
 
             logger.info(`用户 ${userId} 捡拾漂流瓶: ${result.id}`);
-            return { ...result, picked_by: userId, picked_at: new Date().toISOString(), is_active: false };
+            // 使用与数据库一致的时间格式
+            const pickedTime = getCurrentTimestamp();
+            return { ...result, picked_by: userId, picked_at: pickedTime, is_active: false };
         } catch (error) {
             logger.error('捡拾漂流瓶失败:', error);
             throw error;
@@ -154,11 +173,12 @@ export class BottleService {
     }): Promise<string> {
         try {
             const replyId = uuidv4();
+            const currentTime = getCurrentTimestamp();
             
             await dbRun(`
-                INSERT INTO replies (id, bottle_id, sender_id, sender_username, content, media_type, media_file_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            `, [replyId, data.bottleId, data.senderId, data.senderUsername, data.content, data.mediaType, data.mediaFileId]);
+                INSERT INTO replies (id, bottle_id, sender_id, sender_username, content, media_type, media_file_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [replyId, data.bottleId, data.senderId, data.senderUsername, data.content, data.mediaType, data.mediaFileId, currentTime]);
 
             // 添加回复者积分
             await PointsService.addPoints(
@@ -316,10 +336,18 @@ export class BottleService {
 
     // 检查用户今日投放次数
     static async getUserTodayBottleCount(userId: number): Promise<number> {
+        // 获取今天的日期字符串
+        const today = new Date().toLocaleDateString('zh-CN', {
+            timeZone: 'Asia/Shanghai',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        }).replace(/\//g, '-');
+
         const result = await dbGet(`
             SELECT COUNT(*) as count FROM bottles 
-            WHERE sender_id = ? AND DATE(created_at) = DATE('now')
-        `, [userId]) as { count: number };
+            WHERE sender_id = ? AND DATE(created_at) = ?
+        `, [userId, today]) as { count: number };
         
         return result.count;
     }
@@ -335,9 +363,9 @@ export class BottleService {
                 ?, 
                 COALESCE(?, (SELECT username FROM user_stats WHERE user_id = ?)),
                 COALESCE((SELECT ${field} FROM user_stats WHERE user_id = ?), 0) + 1,
-                CURRENT_TIMESTAMP
+                ?
             )
-        `, [userId, username, userId, userId]);
+        `, [userId, username, userId, userId, getCurrentTimestamp()]);
     }
 
     // 更新用户统计（事务内版本）
@@ -351,9 +379,9 @@ export class BottleService {
                 ?, 
                 COALESCE(?, (SELECT username FROM user_stats WHERE user_id = ?)),
                 COALESCE((SELECT ${field} FROM user_stats WHERE user_id = ?), 0) + 1,
-                CURRENT_TIMESTAMP
+                ?
             )
-        `, [userId, username, userId, userId]);
+        `, [userId, username, userId, userId, getCurrentTimestamp()]);
     }
 
     // 获取用户特权状态
@@ -412,12 +440,26 @@ export class BottleService {
                 throw new Error('需要购买消息撤回特权');
             }
 
+            // 计算24小时前的时间
+            const twentyFourHoursAgo = new Date();
+            twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+            const twentyFourHoursAgoStr = twentyFourHoursAgo.toLocaleString('zh-CN', {
+                timeZone: 'Asia/Shanghai',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            }).replace(/\//g, '-');
+
             // 检查瓶子是否属于用户且在24小时内
             const bottle = await dbGet(`
                 SELECT * FROM bottles 
                 WHERE id = ? AND sender_id = ? 
-                AND created_at > datetime('now', '-24 hours')
-            `, [bottleId, userId]) as Bottle | null;
+                AND created_at > ?
+            `, [bottleId, userId, twentyFourHoursAgoStr]) as Bottle | null;
 
             if (!bottle) {
                 throw new Error('无法撤回此漂流瓶（不存在、不属于你或已超过24小时）');
@@ -433,10 +475,10 @@ export class BottleService {
             // 标记撤回特权为已使用
             await dbRun(`
                 UPDATE user_purchases 
-                SET status = 'used', updated_at = CURRENT_TIMESTAMP
+                SET status = 'used', updated_at = ?
                 WHERE user_id = ? AND item_id = 'message_recall' AND status = 'active'
                 LIMIT 1
-            `, [userId]);
+            `, [getCurrentTimestamp(), userId]);
 
             logger.info(`用户 ${userId} 撤回漂流瓶: ${bottleId}`);
             return true;

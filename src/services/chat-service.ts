@@ -1,6 +1,20 @@
 import { dbGet, dbRun, dbAll } from './database';
 import { logger } from '../utils/logger';
 
+// 生成中国时区的时间戳字符串
+const getCurrentTimestamp = (): string => {
+    return new Date().toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    }).replace(/\//g, '-');
+};
+
 interface ChatSession {
     id: string;
     user1_id: number;
@@ -69,11 +83,12 @@ export class ChatService {
     // 结束聊天会话
     static async endChatSession(userId: number): Promise<boolean> {
         try {
+            const currentTime = getCurrentTimestamp();
             const result = await dbRun(`
                 UPDATE chat_sessions 
-                SET status = 'ended', ended_at = CURRENT_TIMESTAMP
+                SET status = 'ended', ended_at = ?
                 WHERE (user1_id = ? OR user2_id = ?) AND status = 'active'
-            `, [userId, userId]);
+            `, [currentTime, userId, userId]);
             
             const success = result.changes > 0;
             if (success) {
@@ -218,4 +233,4 @@ export class ChatService {
             return { user1Messages: 0, user2Messages: 0, totalMessages: 0 };
         }
     }
-} 
+}
