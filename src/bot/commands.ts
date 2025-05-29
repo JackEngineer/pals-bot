@@ -906,13 +906,14 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                         NotificationService.sendFriendRequestAcceptedNotification(
                             request.requester_id,
                             {
-                                friendId: userId,
-                                friendUsername: username
+                                friendId: userId
                             }
                         ),
-                        ctx.reply(
-                            `🎉 你接受了好友申请！\n\n` +
-                            `现在你们是好友了，可以查看对方信息并进行私聊 ✨`
+                        NotificationService.sendFriendRequestAcceptedNotification(
+                            userId,
+                            {
+                                friendId: request.requester_id
+                            }
                         )
                     ]);
                     

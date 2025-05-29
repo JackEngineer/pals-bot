@@ -127,12 +127,18 @@ export class FriendService {
         try {
             const [user1, user2] = userId1 < userId2 ? [userId1, userId2] : [userId2, userId1];
             
+            logger.info(`检查好友关系: ${userId1} <-> ${userId2}, 排序后: ${user1} <-> ${user2}`);
+            
             const friendship = await dbGet(`
                 SELECT id FROM friendships 
                 WHERE user1_id = ? AND user2_id = ? AND status = 'active'
             `, [user1, user2]);
 
-            return friendship !== null;
+            logger.info(`好友关系查询结果:`, friendship);
+            const result = Boolean(friendship);
+            logger.info(`areFriends返回结果: ${result}`);
+            
+            return result;
         } catch (error) {
             logger.error('检查好友关系失败:', error);
             return false;
