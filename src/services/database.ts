@@ -315,6 +315,19 @@ const initializeTables = async (): Promise<void> => {
             )
         `);
 
+        // 用户信息表
+        await run(`
+            CREATE TABLE IF NOT EXISTS user_info (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                display_name TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
         // 创建索引
         await run(`CREATE INDEX IF NOT EXISTS idx_bottles_active ON bottles (is_active, created_at)`);
         await run(`CREATE INDEX IF NOT EXISTS idx_bottles_sender ON bottles (sender_id)`);
@@ -335,6 +348,10 @@ const initializeTables = async (): Promise<void> => {
         await run(`CREATE INDEX IF NOT EXISTS idx_friend_requests_target ON friend_requests (target_id, status)`);
         await run(`CREATE INDEX IF NOT EXISTS idx_friend_requests_requester ON friend_requests (requester_id, status)`);
         await run(`CREATE INDEX IF NOT EXISTS idx_friend_requests_session ON friend_requests (session_id)`);
+
+        // 创建用户信息相关索引
+        await run(`CREATE INDEX IF NOT EXISTS idx_user_info_username ON user_info (username)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_user_info_display_name ON user_info (display_name)`);
 
         // 插入默认数据
         await insertDefaultData(run);

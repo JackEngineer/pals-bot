@@ -1,4 +1,5 @@
 import { Telegraf } from 'telegraf';
+import { UserService } from './user-service';
 import { logger } from '../utils/logger';
 
 class NotificationService {
@@ -393,13 +394,14 @@ class NotificationService {
             friendDisplayName?: string;
         }
     ) {
-        const friendDisplay = friendData.friendDisplayName || friendData.friendUsername || `用户 ${friendData.friendId}`;
+        // 获取好友的友好显示名称
+        const friendDisplay = await UserService.getUserDisplayName(friendData.friendId);
         
         const message = 
             `💬 私聊已开启！\n\n` +
             `现在你正在与 ${friendDisplay} 私聊\n` +
             `消息将直接发送给对方，不再通过机器人中转\n` +
-            `点击 @${friendData.friendUsername || 'telegram_user'} 开始对话吧！`;
+            `点击下方按钮开始对话吧！`;
 
         const replyMarkup = {
             inline_keyboard: [[
@@ -420,7 +422,8 @@ class NotificationService {
             addedDate: string;
         }
     ) {
-        const friendDisplay = profileData.friendDisplayName || profileData.friendUsername || `用户 ${profileData.friendId}`;
+        // 获取好友的友好显示名称
+        const friendDisplay = await UserService.getUserDisplayName(profileData.friendId);
         
         const message = 
             `👤 好友资料\n\n` +

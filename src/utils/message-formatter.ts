@@ -267,7 +267,7 @@ export function formatLeaderboard(leaderboard: any[]): string {
     leaderboard.forEach((user, index) => {
         const rank = index + 1;
         const medal = rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : `${rank}.`;
-        const displayName = user.username || `用户${String(user.user_id).slice(-4)}`;
+        const displayName = user.username ? `@${user.username}` : `用户${String(user.user_id).slice(-4)}`;
         const vipMark = user.vip_expires_at && new Date(user.vip_expires_at) > new Date() ? '💎' : '';
         message += `${medal} ${displayName}${vipMark}\n`;
         message += `   ${user.level_name} | ${user.total_points}积分\n\n`;
