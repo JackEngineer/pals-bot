@@ -17,6 +17,7 @@ export interface Bottle {
     picked_at?: string;
     picked_by?: number;
     is_active: boolean;
+    discard_count?: number; // 🆕 被丢弃次数
 }
 
 export interface Reply {
@@ -28,6 +29,14 @@ export interface Reply {
     media_type?: 'photo' | 'voice' | 'video' | 'document';
     media_file_id?: string;
     created_at: string;
+}
+
+// 🆕 瓶子丢弃记录接口
+export interface BottleDiscard {
+    id: number;
+    bottle_id: string;
+    user_id: number;
+    discarded_at: string;
 }
 
 export interface UserStats {
@@ -317,12 +326,12 @@ const initializeTables = async (): Promise<void> => {
 
         // 用户信息表
         await run(`
-            CREATE TABLE IF NOT EXISTS user_info (
+            CREATE TABLE IF NOT EXISTS user_profiles (
                 user_id INTEGER PRIMARY KEY,
-                username TEXT,
                 first_name TEXT,
                 last_name TEXT,
-                display_name TEXT,
+                username TEXT,
+                language_code TEXT DEFAULT 'zh',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -387,6 +396,59 @@ const initializeTables = async (): Promise<void> => {
             )
         `);
 
+        // 广播消息表
+        await run(`
+            CREATE TABLE IF NOT EXISTS broadcast_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                media_type TEXT,
+                media_file_id TEXT,
+                status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sending', 'completed', 'failed')),
+                target_type TEXT NOT NULL DEFAULT 'all' CHECK (target_type IN ('all', 'active', 'level')),
+                target_filter TEXT,
+                sent_count INTEGER DEFAULT 0,
+                total_count INTEGER DEFAULT 0,
+                error_count INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                started_at DATETIME,
+                completed_at DATETIME
+            )
+        `);
+
+        // 广播接收记录表
+        await run(`
+            CREATE TABLE IF NOT EXISTS broadcast_recipients (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                broadcast_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed')),
+                error_message TEXT,
+                sent_at DATETIME,
+                FOREIGN KEY (broadcast_id) REFERENCES broadcast_messages (id),
+                UNIQUE(broadcast_id, user_id)
+            )
+        `);
+
+        // 🆕 瓶子丢弃记录表
+        await run(`
+            CREATE TABLE IF NOT EXISTS bottle_discards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bottle_id TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                discarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(bottle_id, user_id),
+                FOREIGN KEY (bottle_id) REFERENCES bottles (id)
+            )
+        `);
+
+        // 🆕 在bottles表中添加被丢弃次数字段（如果不存在）
+        try {
+            await run(`ALTER TABLE bottles ADD COLUMN discard_count INTEGER DEFAULT 0`);
+        } catch (error) {
+            // 列已存在，忽略错误
+        }
+
         // 创建索引
         await run(`CREATE INDEX IF NOT EXISTS idx_bottles_active ON bottles (is_active, created_at)`);
         await run(`CREATE INDEX IF NOT EXISTS idx_bottles_sender ON bottles (sender_id)`);
@@ -409,8 +471,8 @@ const initializeTables = async (): Promise<void> => {
         await run(`CREATE INDEX IF NOT EXISTS idx_friend_requests_session ON friend_requests (session_id)`);
 
         // 创建用户信息相关索引
-        await run(`CREATE INDEX IF NOT EXISTS idx_user_info_username ON user_info (username)`);
-        await run(`CREATE INDEX IF NOT EXISTS idx_user_info_display_name ON user_info (display_name)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_user_info_username ON user_profiles (username)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_user_info_display_name ON user_profiles (first_name, last_name)`);
 
         // 创建广播相关索引
         await run(`CREATE INDEX IF NOT EXISTS idx_chat_groups_type ON chat_groups (chat_type, is_active)`);
@@ -419,6 +481,9 @@ const initializeTables = async (): Promise<void> => {
         await run(`CREATE INDEX IF NOT EXISTS idx_broadcast_logs_chat ON broadcast_logs (chat_id, sent_at)`);
         await run(`CREATE INDEX IF NOT EXISTS idx_broadcast_logs_template ON broadcast_logs (template_id, status)`);
         await run(`CREATE INDEX IF NOT EXISTS idx_broadcast_schedules_active ON broadcast_schedules (is_active, next_run_at)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_broadcast_messages_status ON broadcast_messages (status)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_broadcast_recipients_broadcast ON broadcast_recipients (broadcast_id, status)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_bottle_discards_bottle ON bottle_discards (bottle_id)`);
 
         // 插入默认数据
         await insertDefaultData(run);

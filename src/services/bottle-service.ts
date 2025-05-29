@@ -86,32 +86,49 @@ export class BottleService {
             
             // 在事务中执行核心数据库操作
             const result = await dbExecuteInTransaction(async () => {
-                // 查找可用的漂流瓶（排除自己投放的）
+                // 查找可用的漂流瓶（排除自己投放的和自己已丢弃的）
                 let sql = `
-                    SELECT * FROM bottles 
-                    WHERE is_active = 1 AND sender_id != ?
+                    SELECT b.*, COALESCE(b.discard_count, 0) as discard_count
+                    FROM bottles b
+                    WHERE b.is_active = 1 
+                    AND b.sender_id != ?
+                    AND b.id NOT IN (
+                        SELECT bottle_id FROM bottle_discards WHERE user_id = ?
+                    )
                     ORDER BY RANDOM() 
-                    LIMIT 1
+                    LIMIT 10
                 `;
                 
                 if (hasReplyPriority) {
                     // 优先显示回复较少的瓶子
                     sql = `
-                        SELECT b.* FROM bottles b
+                        SELECT b.*, COALESCE(b.discard_count, 0) as discard_count
+                        FROM bottles b
                         LEFT JOIN (
                             SELECT bottle_id, COUNT(*) as reply_count 
                             FROM replies 
                             GROUP BY bottle_id
                         ) r ON b.id = r.bottle_id
-                        WHERE b.is_active = 1 AND b.sender_id != ?
+                        WHERE b.is_active = 1 
+                        AND b.sender_id != ?
+                        AND b.id NOT IN (
+                            SELECT bottle_id FROM bottle_discards WHERE user_id = ?
+                        )
                         ORDER BY COALESCE(r.reply_count, 0) ASC, RANDOM()
-                        LIMIT 1
+                        LIMIT 10
                     `;
                 }
 
-                const bottle = await dbGet(sql, [userId]) as Bottle;
+                const bottles = await dbAll(sql, [userId, userId]) as Bottle[];
 
-                if (!bottle) {
+                if (!bottles || bottles.length === 0) {
+                    return null;
+                }
+
+                // 🆕 基于丢弃次数计算概率并选择瓶子
+                const selectedBottle = this.selectBottleByDiscardProbability(bottles);
+
+                if (!selectedBottle) {
                     return null;
                 }
 
@@ -122,7 +139,7 @@ export class BottleService {
                     UPDATE bottles 
                     SET picked_at = ?, picked_by = ?, is_active = 0
                     WHERE id = ? AND is_active = 1
-                `, [currentTime, userId, bottle.id]);
+                `, [currentTime, userId, selectedBottle.id]);
 
                 // 如果没有更新任何行，说明瓶子已被其他人捡拾
                 if (updateResult.changes === 0) {
@@ -132,7 +149,7 @@ export class BottleService {
                 // 更新用户统计
                 await this.updateUserStatsInTransaction(userId, 'pick', undefined);
 
-                return bottle;
+                return selectedBottle;
             });
 
             if (!result) {
@@ -158,6 +175,108 @@ export class BottleService {
             return { ...result, picked_by: userId, picked_at: pickedTime, is_active: false };
         } catch (error) {
             logger.error('捡拾漂流瓶失败:', error);
+            throw error;
+        }
+    }
+
+    // 🆕 基于丢弃次数的概率选择算法
+    private static selectBottleByDiscardProbability(bottles: Bottle[]): Bottle | null {
+        if (!bottles || bottles.length === 0) {
+            return null;
+        }
+
+        // 为每个瓶子计算被选中的权重（丢弃次数越多，权重越低）
+        const bottlesWithWeight = bottles.map(bottle => {
+            const discardCount = bottle.discard_count || 0;
+            // 权重计算：基础权重100，每被丢弃一次权重减少20，最低权重为10
+            const weight = Math.max(100 - (discardCount * 20), 10);
+            return { bottle, weight };
+        });
+
+        // 计算总权重
+        const totalWeight = bottlesWithWeight.reduce((sum, item) => sum + item.weight, 0);
+
+        // 记录选择过程（调试用）
+        logger.info(`瓶子选择概率分布:`, {
+            total_bottles: bottles.length,
+            total_weight: totalWeight,
+            bottles: bottlesWithWeight.map(item => ({
+                id: item.bottle.id.slice(-8),
+                discard_count: item.bottle.discard_count || 0,
+                weight: item.weight,
+                probability: `${((item.weight / totalWeight) * 100).toFixed(1)}%`
+            }))
+        });
+
+        // 随机选择
+        const random = Math.random() * totalWeight;
+        let currentWeight = 0;
+
+        for (const item of bottlesWithWeight) {
+            currentWeight += item.weight;
+            if (random <= currentWeight) {
+                logger.info(`选中瓶子: ${item.bottle.id.slice(-8)}, 丢弃次数: ${item.bottle.discard_count || 0}, 权重: ${item.weight}`);
+                return item.bottle;
+            }
+        }
+
+        // 如果没有选中任何瓶子，返回第一个
+        const fallbackBottle = bottlesWithWeight[0].bottle;
+        logger.info(`降级选择瓶子: ${fallbackBottle.id.slice(-8)}`);
+        return fallbackBottle;
+    }
+
+    // 🆕 丢弃漂流瓶
+    static async discardBottle(userId: number, bottleId: string): Promise<boolean> {
+        try {
+            return await dbExecuteInTransaction(async () => {
+                // 检查瓶子是否存在且已被用户捡拾
+                const bottle = await dbGet(`
+                    SELECT * FROM bottles 
+                    WHERE id = ? AND picked_by = ? AND is_active = 0
+                `, [bottleId, userId]) as Bottle | null;
+
+                if (!bottle) {
+                    throw new Error('瓶子不存在或未被你捡拾');
+                }
+
+                // 检查用户是否已经丢弃过这个瓶子
+                const existingDiscard = await dbGet(`
+                    SELECT * FROM bottle_discards 
+                    WHERE bottle_id = ? AND user_id = ?
+                `, [bottleId, userId]);
+
+                if (existingDiscard) {
+                    throw new Error('你已经丢弃过这个瓶子');
+                }
+
+                // 记录丢弃
+                await dbRun(`
+                    INSERT INTO bottle_discards (bottle_id, user_id, discarded_at)
+                    VALUES (?, ?, ?)
+                `, [bottleId, userId, getCurrentTimestamp()]);
+
+                // 增加瓶子的丢弃计数并重新激活
+                await dbRun(`
+                    UPDATE bottles 
+                    SET discard_count = COALESCE(discard_count, 0) + 1,
+                        is_active = 1,
+                        picked_at = NULL,
+                        picked_by = NULL
+                    WHERE id = ?
+                `, [bottleId]);
+
+                // 减少用户的捡拾统计（因为丢弃了）
+                await dbRun(`
+                    UPDATE user_stats 
+                    SET bottles_picked = bottles_picked - 1
+                    WHERE user_id = ?
+                `, [userId]);
+
+                return true;
+            });
+        } catch (error) {
+            logger.error('丢弃漂流瓶失败:', error);
             throw error;
         }
     }
@@ -428,6 +547,57 @@ export class BottleService {
             hasDoublePoints,
             hasLuckyBoost,
             hasReplyPriority
+        };
+    }
+
+    // 🆕 获取用户丢弃统计
+    static async getUserDiscardStats(userId: number): Promise<{
+        totalDiscarded: number;
+        recentDiscarded: any[];
+    }> {
+        const [totalDiscarded, recentDiscarded] = await Promise.all([
+            dbGet(`
+                SELECT COUNT(*) as count 
+                FROM bottle_discards 
+                WHERE user_id = ?
+            `, [userId]) as Promise<{ count: number }>,
+            dbAll(`
+                SELECT bd.*, b.content, b.created_at as bottle_created_at
+                FROM bottle_discards bd
+                JOIN bottles b ON bd.bottle_id = b.id
+                WHERE bd.user_id = ?
+                ORDER BY bd.discarded_at DESC
+                LIMIT 5
+            `, [userId])
+        ]);
+
+        return {
+            totalDiscarded: totalDiscarded.count,
+            recentDiscarded
+        };
+    }
+
+    // 🆕 获取瓶子的丢弃统计
+    static async getBottleDiscardStats(bottleId: string): Promise<{
+        discardCount: number;
+        discardUsers: number[];
+    }> {
+        const [discardInfo, discardUsers] = await Promise.all([
+            dbGet(`
+                SELECT discard_count
+                FROM bottles
+                WHERE id = ?
+            `, [bottleId]) as Promise<{ discard_count: number } | null>,
+            dbAll(`
+                SELECT user_id
+                FROM bottle_discards
+                WHERE bottle_id = ?
+            `, [bottleId]) as Promise<{ user_id: number }[]>
+        ]);
+
+        return {
+            discardCount: discardInfo?.discard_count || 0,
+            discardUsers: discardUsers.map(d => d.user_id)
         };
     }
 

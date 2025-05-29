@@ -22,6 +22,9 @@ const pendingReplies = new Map<number, string>();
 // 存储已显示好友申请按钮的会话 (避免重复显示)
 const shownFriendButtons = new Set<string>();
 
+// 存储用户当前正在查看的瓶子ID
+const currentlyViewing = new Map<number, string>();
+
 // 扩展 Context 以支持会话数据
 interface ExtendedContext extends Context {
     pendingReplies?: Map<number, string>;
@@ -182,11 +185,16 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                     reply_markup: {
                         inline_keyboard: [[
                             { text: '💬 回复漂流瓶', callback_data: `reply_${bottle.id}` },
+                            { text: '🗑️ 丢弃', callback_data: `discard_${bottle.id}` }
+                        ], [
                             { text: '🎣 继续捡拾', callback_data: 'pick_another' }
                         ]]
                     }
                 }
             );
+
+            // 🆕 保存当前正在查看的瓶子ID
+            currentlyViewing.set(userId, bottle.id);
 
         } catch (error) {
             logger.error('捡拾漂流瓶失败:', error);
@@ -1082,10 +1090,50 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                 
                 // 保存待回复的瓶子ID
                 pendingReplies.set(userId, bottleId);
+                // 🆕 清理当前查看状态
+                currentlyViewing.delete(userId);
                 return;
             }
 
-            // 继续捡拾按钮
+            // 🆕 丢弃漂流瓶按钮
+            if (callbackData.startsWith('discard_')) {
+                const bottleId = callbackData.replace('discard_', '');
+                
+                try {
+                    await BottleService.discardBottle(userId, bottleId);
+                    
+                    await ctx.answerCbQuery('🗑️ 瓶子已丢弃');
+                    
+                    // 编辑原消息，移除按钮
+                    await ctx.editMessageReplyMarkup({
+                        inline_keyboard: []
+                    });
+                    
+                    await ctx.reply(
+                        `🗑️ 瓶子已丢弃\n\n` +
+                        `瓶子 #${bottleId.slice(-8)} 已被丢弃，它会重新回到大海中\n` +
+                        `你将不会再次捡到这个瓶子\n\n` +
+                        `想要继续捡拾其他瓶子吗？`,
+                        {
+                            reply_markup: {
+                                inline_keyboard: [[
+                                    { text: '🎣 继续捡拾', callback_data: 'pick_another' }
+                                ]]
+                            }
+                        }
+                    );
+                    
+                } catch (error) {
+                    await ctx.answerCbQuery('❌ 丢弃失败');
+                    await ctx.reply(`❌ 丢弃失败: ${(error as Error).message}`);
+                }
+                
+                // 🆕 清理当前查看状态
+                currentlyViewing.delete(userId);
+                return;
+            }
+
+            // 继续捡拾按钮（修改逻辑：也会丢弃当前瓶子）
             if (callbackData === 'pick_another') {
                 await ctx.answerCbQuery();
                 
@@ -1093,6 +1141,19 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                 await ctx.editMessageReplyMarkup({
                     inline_keyboard: []
                 });
+
+                // 🆕 先丢弃当前正在查看的瓶子（如果有的话）
+                const currentBottleId = currentlyViewing.get(userId);
+                if (currentBottleId) {
+                    try {
+                        await BottleService.discardBottle(userId, currentBottleId);
+                        currentlyViewing.delete(userId);
+                    } catch (error) {
+                        // 丢弃失败不影响继续捡拾，可能瓶子已经被处理过了
+                        logger.warn(`自动丢弃瓶子失败: ${(error as Error).message}`);
+                        currentlyViewing.delete(userId);
+                    }
+                }
                 
                 // 自动执行捡拾命令
                 const bottle = await BottleService.pickBottle(userId);
@@ -1138,11 +1199,16 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                         reply_markup: {
                             inline_keyboard: [[
                                 { text: '💬 回复漂流瓶', callback_data: `reply_${bottle.id}` },
+                                { text: '🗑️ 丢弃', callback_data: `discard_${bottle.id}` }
+                            ], [
                                 { text: '🎣 继续捡拾', callback_data: 'pick_another' }
                             ]]
                         }
                     }
                 );
+
+                // 🆕 保存当前正在查看的瓶子ID
+                currentlyViewing.set(userId, bottle.id);
                 
                 return;
             }

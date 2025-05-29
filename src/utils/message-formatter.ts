@@ -9,15 +9,22 @@ export function formatBottleMessage(bottle: Bottle): string {
     // const senderUsername = bottle.sender_username ? `@${bottle.sender_username}` : '匿名用户';
     const senderUsername = '匿名用户';
     
-    return (
+    let message = (
         `🍾 你捡到了一个漂流瓶！\n\n` +
         `📝 内容: ${bottle.content}\n` +
         `👤 来自: ${senderUsername}\n` +
         `⏰ 投放时间: ${timeAgo}\n` +
-        `🆔 瓶子编号: ${bottle.id}\n\n` +
-        `这个漂流瓶在大海中漂流了 ${timeAgo}，现在被你捡到了！ 🌊\n` +
-        `💰 捡拾奖励: +5积分`
+        `🆔 瓶子编号: ${bottle.id}`
     );
+
+    // 🆕 如果瓶子被丢弃过，显示相关信息
+    if (bottle.discard_count && bottle.discard_count > 0) {
+        message += `\n🗑️ 被丢弃: ${bottle.discard_count} 次`;
+    }
+
+    message += `\n\n这个漂流瓶在大海中漂流了 ${timeAgo}，现在被你捡到了！ 🌊\n💰 捡拾奖励: +5积分`;
+    
+    return message;
 }
 
 export function formatUserStats(userStats: any): string {
@@ -108,6 +115,8 @@ export function formatHelpMessage(): string {
         `📝 基础功能:\n` +
         `• /throw <内容> - 投放漂流瓶 (+10积分)\n` +
         `• /pick - 随机捡拾漂流瓶 (+5积分)\n` +
+        `• 🗑️ 丢弃 - 丢弃不感兴趣的瓶子\n` +
+        `• 🎣 继续捡拾 - 等同于丢弃当前瓶子\n` +
         `• /reply <瓶子ID> <内容> - 回复漂流瓶 (+8积分)\n` +
         `• 直接发送消息也可以投放漂流瓶\n\n` +
         
@@ -187,6 +196,8 @@ export function formatHelpMessage(): string {
         
         `注意事项:\n` +
         `• 不能捡拾自己投放的漂流瓶\n` +
+        `• 不能重复捡拾已丢弃的瓶子\n` +
+        `• 被丢弃次数越多的瓶子，被捡起概率越低\n` +
         `• 每天基础投放限制: ${parseInt(process.env.MAX_BOTTLES_PER_DAY || '5')} 个\n` +
         `• VIP用户和购买特权可增加投放次数\n` +
         `• 聊天是匿名的，尊重对方隐私\n` +
