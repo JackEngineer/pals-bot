@@ -11,7 +11,15 @@ import {
 } from '../utils/message-formatter';
 import { logger } from '../utils/logger';
 
-export function setupCommands(bot: Telegraf<Context>) {
+// 扩展 Context 以支持会话数据
+interface ExtendedContext extends Context {
+    pendingReplies?: Map<number, string>;
+}
+
+// 存储待回复的漂流瓶ID (内存存储，实际项目中应该使用数据库)
+const pendingReplies = new Map<number, string>();
+
+export function setupCommands(bot: Telegraf<ExtendedContext>) {
     // 开始命令
     bot.start((ctx) => {
         ctx.reply(
@@ -161,8 +169,15 @@ export function setupCommands(bot: Telegraf<Context>) {
 
             // 提示可以回复
             await ctx.reply(
-                `💬 想要回复这个漂流瓶吗？\n` +
-                `使用命令: /reply ${bottle.id} 你的回复内容`
+                `💬 想要回复这个漂流瓶吗？`,
+                {
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '💬 回复漂流瓶', callback_data: `reply_${bottle.id}` },
+                            { text: '🎣 继续捡拾', callback_data: 'pick_another' }
+                        ]]
+                    }
+                }
             );
 
         } catch (error) {
@@ -607,6 +622,189 @@ export function setupCommands(bot: Telegraf<Context>) {
         } catch (error) {
             logger.error('获取状态失败:', error);
             await ctx.reply('❌ 获取状态失败');
+        }
+    });
+
+    // 处理回调查询（按钮点击）
+    bot.on('callback_query', async (ctx) => {
+        try {
+            // 类型断言以访问 data 属性
+            const callbackQuery = ctx.callbackQuery as any;
+            const callbackData = callbackQuery.data;
+            
+            if (!callbackData) {
+                await ctx.answerCbQuery('❌ 无效的操作');
+                return;
+            }
+
+            // 回复漂流瓶按钮
+            if (callbackData.startsWith('reply_')) {
+                const bottleId = callbackData.replace('reply_', '');
+                
+                // 回答回调查询
+                await ctx.answerCbQuery();
+                
+                // 编辑原消息，移除按钮
+                await ctx.editMessageReplyMarkup({
+                    inline_keyboard: []
+                });
+                
+                // 提示用户输入回复内容
+                await ctx.reply(
+                    `💬 请发送你的回复内容:\n\n` +
+                    `你的回复将发送给瓶子 #${bottleId} 的主人\n` +
+                    `📝 可以发送文字、图片、语音等任何内容`,
+                    {
+                        reply_markup: {
+                            force_reply: true,
+                            input_field_placeholder: '输入你的回复内容...'
+                        }
+                    }
+                );
+                
+                // 保存待回复的瓶子ID
+                if (ctx.from?.id) {
+                    pendingReplies.set(ctx.from.id, bottleId);
+                }
+                
+                return;
+            }
+
+            // 继续捡拾按钮
+            if (callbackData === 'pick_another') {
+                await ctx.answerCbQuery();
+                
+                // 编辑原消息，移除按钮
+                await ctx.editMessageReplyMarkup({
+                    inline_keyboard: []
+                });
+                
+                // 自动执行捡拾命令
+                const userId = ctx.from?.id;
+                if (!userId) {
+                    await ctx.reply('❌ 无法获取用户信息');
+                    return;
+                }
+
+                const bottle = await BottleService.pickBottle(userId);
+                
+                if (!bottle) {
+                    await ctx.reply(
+                        '🌊 大海中暂时没有漂流瓶了...\n\n' +
+                        '你可以先投放一个漂流瓶，让更多人参与进来！\n' +
+                        '直接发送消息或使用 /throw 命令投放漂流瓶 📝'
+                    );
+                    return;
+                }
+
+                const message = formatBottleMessage(bottle);
+                
+                // 如果有媒体文件，先发送媒体
+                if (bottle.media_file_id && bottle.media_type) {
+                    switch (bottle.media_type) {
+                        case 'photo':
+                            await ctx.replyWithPhoto(bottle.media_file_id, { caption: message });
+                            break;
+                        case 'voice':
+                            await ctx.replyWithVoice(bottle.media_file_id);
+                            await ctx.reply(message);
+                            break;
+                        case 'video':
+                            await ctx.replyWithVideo(bottle.media_file_id, { caption: message });
+                            break;
+                        case 'document':
+                            await ctx.replyWithDocument(bottle.media_file_id, { caption: message });
+                            break;
+                        default:
+                            await ctx.reply(message);
+                    }
+                } else {
+                    await ctx.reply(message);
+                }
+
+                // 提示可以回复
+                await ctx.reply(
+                    `💬 想要回复这个漂流瓶吗？`,
+                    {
+                        reply_markup: {
+                            inline_keyboard: [[
+                                { text: '💬 回复漂流瓶', callback_data: `reply_${bottle.id}` },
+                                { text: '🎣 继续捡拾', callback_data: 'pick_another' }
+                            ]]
+                        }
+                    }
+                );
+                
+                return;
+            }
+
+            await ctx.answerCbQuery('❌ 未知的操作');
+
+        } catch (error) {
+            logger.error('处理回调查询失败:', error);
+            await ctx.answerCbQuery('❌ 操作失败，请稍后重试');
+        }
+    });
+
+    // 处理回复消息（当用户点击回复按钮后发送的消息）
+    bot.on('message', async (ctx, next) => {
+        try {
+            const userId = ctx.from?.id;
+            const username = ctx.from?.username;
+            
+            if (!userId) {
+                return next();
+            }
+
+            // 检查是否有待回复的瓶子
+            if (pendingReplies.has(userId)) {
+                const bottleId = pendingReplies.get(userId);
+                
+                // 检查消息是否是回复消息
+                const message = ctx.message as any;
+                if (message.reply_to_message) {
+                    let replyContent = '';
+                    
+                    // 处理不同类型的消息
+                    if ('text' in message) {
+                        replyContent = message.text;
+                    } else if ('caption' in message && message.caption) {
+                        replyContent = message.caption;
+                    } else if ('voice' in message) {
+                        replyContent = '[语音消息]';
+                    } else if ('photo' in message) {
+                        replyContent = '[图片消息]';
+                    } else if ('video' in message) {
+                        replyContent = '[视频消息]';
+                    } else if ('document' in message) {
+                        replyContent = '[文档消息]';
+                    } else {
+                        replyContent = '[多媒体消息]';
+                    }
+
+                    if (replyContent && bottleId) {
+                        await BottleService.replyToBottle({
+                            bottleId,
+                            senderId: userId,
+                            senderUsername: username,
+                            content: replyContent
+                        });
+
+                        await ctx.reply(formatReplySuccess(bottleId));
+                        
+                        // 清除待回复状态
+                        pendingReplies.delete(userId);
+                        return;
+                    }
+                }
+            }
+
+            // 继续处理其他消息
+            return next();
+
+        } catch (error) {
+            logger.error('处理回复消息失败:', error);
+            await ctx.reply('❌ 回复失败，请稍后重试');
         }
     });
 
