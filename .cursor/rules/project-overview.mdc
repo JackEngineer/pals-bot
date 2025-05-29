@@ -1,7 +1,7 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: 
+globs: 
+alwaysApply: true
 ---
 # 项目概览 - 漂流瓶Telegram机器人
 
@@ -20,10 +20,10 @@ alwaysApply: false
 
 ## 📁 核心目录结构
 - [src/index.ts](mdc:src/index.ts) - 主入口文件，初始化机器人和Express服务器
-- [src/bot/](mdc:src/bot/) - 机器人逻辑层
-- [src/services/](mdc:src/services/) - 业务服务层 
-- [src/types/](mdc:src/types/) - TypeScript类型定义
-- [src/utils/](mdc:src/utils/) - 工具函数和通用组件
+- [src/bot/](mdc:src/bot) - 机器人逻辑层
+- [src/services/](mdc:src/services) - 业务服务层 
+- [src/types/](mdc:src/types) - TypeScript类型定义
+- [src/utils/](mdc:src/utils) - 工具函数和通用组件
 
 ## 🎮 主要功能模块
 1. **漂流瓶系统** - 投放、捡拾、回复功能
