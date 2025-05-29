@@ -1,0 +1,108 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 数据库设计模式与数据操作规范
+
+## 🗄️ SQLite数据库设计原则
+
+### 事务管理
+- 参考 [src/services/database.ts](mdc:src/services/database.ts) 的事务实现模式
+- 所有写操作必须在事务中执行
+- 复杂业务逻辑要使用事务确保数据一致性
+- 事务失败要自动回滚并记录错误日志
+
+### 数据模型设计
+```sql
+-- 核心表结构参考
+bottles (id, user_id, content, created_at, picked_count, status)
+replies (id, bottle_id, user_id, content, created_at)
+user_stats (user_id, thrown_count, picked_count, replied_count)
+user_points (user_id, total_points, level, last_checkin)
+points_transactions (id, user_id, amount, type, description, created_at)
+```
+
+### 查询优化
+- 为高频查询字段创建索引
+- 使用预编译语句防止SQL注入
+- 分页查询避免一次性加载大量数据
+- 统计查询要考虑性能影响
+
+## 🔄 服务层数据操作
+
+### 漂流瓶服务模式
+- 参考 [src/services/bottle-service.ts](mdc:src/services/bottle-service.ts) 实现数据操作
+- 投放漂流瓶要验证用户限制和权限
+- 捡拾漂流瓶要实现随机算法和去重逻辑
+- 回复功能要维护对话关系和通知机制
+
+### 积分系统数据模式
+- 参考 [src/services/points-service.ts](mdc:src/services/points-service.ts) 实现积分逻辑
+- 积分变动要记录详细的交易历史
+- 等级计算要实时更新用户状态
+- 商店购买要验证积分余额和商品可用性
+
+### 用户数据管理
+- 用户创建要初始化所有相关数据表
+- 用户统计要实时更新，避免频繁计算
+- 删除用户要级联清理相关数据
+- 数据导出要考虑隐私保护
+
+## 📊 数据分析与报表
+
+### 统计数据计算
+- 全局统计要定期更新，避免实时计算
+- 用户排行榜要考虑缓存机制
+- 时间段统计要使用适当的时间窗口
+- 增量统计比全量统计更高效
+
+### 数据备份策略
+- 定期备份数据库文件
+- 重要操作前创建快照
+- 备份文件要加密存储
+- 恢复流程要定期测试
+
+## 🔍 查询模式与最佳实践
+
+### 常用查询模式
+```typescript
+// 分页查询模式
+const getBottlesWithPagination = async (page: number, limit: number) => {
+  const offset = (page - 1) * limit;
+  return db.all(
+    `SELECT * FROM bottles ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    [limit, offset]
+  );
+};
+
+// 事务操作模式
+const transferPoints = async (fromUserId: number, toUserId: number, amount: number) => {
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run('BEGIN TRANSACTION');
+      // 执行转账操作
+      db.run('COMMIT', (err) => {
+        if (err) {
+          db.run('ROLLBACK');
+          reject(err);
+        } else {
+          resolve(true);
+        }
+      });
+    });
+  });
+};
+```
+
+### 数据验证规则
+- 用户ID必须存在且有效
+- 积分变动不能导致负数余额
+- 时间字段要使用标准格式
+- 字符串长度要有合理限制
+
+### 性能监控
+- 记录慢查询并优化
+- 监控数据库连接数和锁等待
+- 定期分析查询执行计划
+- 数据量增长要及时扩容

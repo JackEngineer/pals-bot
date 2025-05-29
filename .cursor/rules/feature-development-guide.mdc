@@ -1,0 +1,145 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 功能开发指南与扩展规范
+
+## 🚀 新功能开发流程
+
+### 功能规划阶段
+- 新功能要与现有的积分系统、等级系统集成
+- 考虑功能对用户体验的影响和改进
+- 评估功能的技术复杂度和开发周期
+- 设计功能的数据库表结构和API接口
+
+### 开发实施步骤
+1. **数据库设计** - 在 [src/services/database.ts](mdc:src/services/database.ts) 中添加表结构
+2. **类型定义** - 在 [src/types/index.ts](mdc:src/types/index.ts) 中添加相关类型
+3. **服务层实现** - 在 `src/services/` 目录下创建相应的服务文件
+4. **机器人命令** - 在 [src/bot/commands.ts](mdc:src/bot/commands.ts) 中注册新命令
+5. **消息处理** - 在 [src/bot/handlers.ts](mdc:src/bot/handlers.ts) 中处理用户交互
+6. **测试验证** - 确保功能稳定性和用户体验
+
+## 🎮 现有功能扩展模式
+
+### 积分系统扩展
+- 新功能要在 [src/services/points-service.ts](mdc:src/services/points-service.ts) 中添加积分奖励逻辑
+- 支持时间加成(深夜1.5倍、周末1.2倍)和VIP倍数(1.2倍)
+- 记录详细的积分变动历史和获取原因
+- 考虑功能对用户等级提升的影响
+
+### 商店系统扩展
+- 新商品要分类：功能特权类、体验增强类、特殊物品类
+- 商品要有明确的使用时限和效果说明
+- 购买逻辑要验证用户等级权限和积分余额
+- 商品效果要在相关功能中正确应用
+
+### 成就系统扩展
+- 新成就要有清晰的解锁条件和奖励机制
+- 成就进度要实时更新，用户操作后立即检查
+- 成就奖励要自动发放并通知用户
+- 成就系统要支持复杂的组合条件
+
+## 🛠️ 技术实现规范
+
+### 服务层扩展模式
+```typescript
+// 新服务类模板
+export class NewFeatureService {
+  constructor(private db: Database) {}
+
+  /**
+   * 创建新功能相关数据
+   */
+  async createNewFeature(userId: number, data: INewFeatureData): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      this.db.serialize(() => {
+        this.db.run('BEGIN TRANSACTION');
+        
+        // 数据验证
+        // 业务逻辑处理
+        // 积分奖励处理
+        // 成就检查
+        
+        this.db.run('COMMIT', (err) => {
+          if (err) {
+            this.db.run('ROLLBACK');
+            logger.error('新功能创建失败:', err);
+            reject(err);
+          } else {
+            resolve(true);
+          }
+        });
+      });
+    });
+  }
+}
+```
+
+### 命令注册模式
+```typescript
+// 在 commands.ts 中添加新命令
+bot.command('newfeature', async (ctx) => {
+  try {
+    const userId = ctx.from.id;
+    
+    // 权限验证
+    // 参数解析
+    // 业务逻辑调用
+    // 结果反馈
+    
+    await ctx.reply('功能执行成功', {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '继续使用', callback_data: 'continue' }],
+          [{ text: '返回主菜单', callback_data: 'menu' }]
+        ]
+      }
+    });
+  } catch (error) {
+    logger.error('命令执行失败:', error);
+    await ctx.reply('操作失败，请稍后重试');
+  }
+});
+```
+
+## 📋 功能测试清单
+
+### 基础功能测试
+- [ ] 新用户注册和数据初始化
+- [ ] 功能权限验证和等级限制
+- [ ] 输入参数验证和错误处理
+- [ ] 数据库事务和一致性检查
+
+### 积分系统集成测试
+- [ ] 积分奖励正确计算和发放
+- [ ] 时间加成和VIP倍数生效
+- [ ] 积分交易记录完整保存
+- [ ] 等级变化和权限更新
+
+### 用户体验测试
+- [ ] 操作流程简单直观
+- [ ] 错误提示清晰友好
+- [ ] 按钮交互响应及时
+- [ ] 消息格式美观易读
+
+### 性能压力测试
+- [ ] 并发操作数据一致性
+- [ ] 大量数据处理性能
+- [ ] 内存和CPU使用情况
+- [ ] 错误恢复和降级处理
+
+## 🔄 功能维护与优化
+
+### 数据监控
+- 监控新功能的使用频率和用户反馈
+- 分析功能对整体用户活跃度的影响
+- 记录功能相关的错误和异常情况
+- 定期评估功能的价值和改进空间
+
+### 持续优化
+- 根据用户反馈调整功能参数
+- 优化数据库查询和业务逻辑性能
+- 改进用户交互流程和界面设计
+- 扩展功能的高级特性和个性化选项

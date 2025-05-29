@@ -1,0 +1,80 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Telegram机器人开发模式与最佳实践
+
+## 🤖 Telegraf框架使用规范
+
+### 命令处理器设计
+- 参考 [src/bot/commands.ts](mdc:src/bot/commands.ts) 的命令注册模式
+- 每个命令处理器要包含权限验证、参数验证、错误处理
+- 复杂命令要拆分成多个子函数
+- 使用中间件模式处理通用逻辑
+
+### 消息处理模式
+- 消息处理逻辑在 [src/bot/handlers.ts](mdc:src/bot/handlers.ts) 中统一管理
+- 支持多媒体消息类型 (文本、图片、语音、视频)
+- 实现消息状态管理 (等待回复、强制回复等)
+- 按钮交互优先于文本命令
+
+## 🎛️ 用户交互设计
+
+### 按钮交互规范
+- 优先使用 InlineKeyboard 提供操作按钮
+- 按钮文本要直观易懂，使用emoji增强视觉效果
+- 复杂操作要提供确认步骤
+- 按钮回调数据要包含必要的上下文信息
+
+### 消息格式化
+- 使用 [src/utils/message-formatter.ts](mdc:src/utils/message-formatter.ts) 统一消息格式
+- 支持Markdown和HTML格式，优先使用Markdown
+- 重要信息使用emoji图标标识
+- 长消息要分段发送，避免超出字符限制
+
+### 状态管理
+- 用户会话状态要在数据库中持久化
+- 复杂交互流程要设计状态机
+- 超时状态要自动清理
+- 并发操作要加锁防止冲突
+
+## 🔒 安全与性能
+
+### 输入验证
+- 所有用户输入必须进行安全验证
+- 防止SQL注入和XSS攻击
+- 限制消息长度和频率
+- 敏感操作要二次确认
+
+### 性能优化
+- 数据库查询要使用索引优化
+- 频繁操作要实现缓存机制
+- 大量数据要分页处理
+- 长时间操作要异步处理
+
+### 错误恢复
+- 网络错误要自动重试
+- 用户操作失败要给出明确提示
+- 系统异常要记录日志并优雅降级
+- 定期检查机器人运行状态
+
+## 📊 数据统计与监控
+
+### 用户行为追踪
+- 参考 [src/services/user-service.ts](mdc:src/services/user-service.ts) 记录用户行为
+- 统计功能使用情况和用户活跃度
+- 记录错误和异常情况
+- 分析用户反馈和建议
+
+### 积分系统集成
+- 所有用户操作都要考虑积分奖励
+- 参考 [src/services/points-service.ts](mdc:src/services/points-service.ts) 实现积分逻辑
+- 支持时间加成和VIP倍数
+- 积分变动要有详细记录
+
+### 通知系统
+- 使用 [src/services/notification-service.ts](mdc:src/services/notification-service.ts) 统一管理通知
+- 支持即时通知和延迟通知
+- 通知要分优先级处理
+- 失败通知要有重试机制

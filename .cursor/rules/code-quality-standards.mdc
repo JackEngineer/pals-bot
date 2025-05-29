@@ -1,0 +1,61 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 代码质量标准与编码规范
+
+## 🎯 TypeScript编码标准
+
+### 类型安全要求
+- 严格遵循 [tsconfig.json](mdc:tsconfig.json) 中的严格模式配置
+- 禁止使用 `any` 类型，必须明确定义类型
+- 所有函数参数和返回值必须有明确的类型声明
+- 使用 [src/types/index.ts](mdc:src/types/index.ts) 中定义的统一类型
+
+### 命名规范
+- **文件命名**: 使用 `kebab-case` (如: `bottle-service.ts`)
+- **类名**: 使用 `PascalCase` (如: `BottleService`)
+- **函数/变量**: 使用 `camelCase` (如: `getUserPoints`)
+- **常量**: 使用 `UPPER_SNAKE_CASE` (如: `MAX_BOTTLES_PER_DAY`)
+- **接口**: 使用 `PascalCase` 并以 `I` 开头 (如: `IUserStats`)
+
+## 🏗️ 架构设计原则
+
+### 服务层设计
+- 每个服务类应该只负责单一职责
+- 参考 [src/services/bottle-service.ts](mdc:src/services/bottle-service.ts) 的设计模式
+- 所有数据库操作必须使用事务 (参考 [src/services/database.ts](mdc:src/services/database.ts))
+- 服务之间通过依赖注入进行解耦
+
+### 错误处理规范
+- 使用 [src/utils/logger.ts](mdc:src/utils/logger.ts) 进行统一日志记录
+- 数据库操作必须包含错误处理和回滚机制
+- Telegram API调用必须包含重试机制
+- 用户输入验证要在处理前完成
+
+### 异步操作规范
+- 统一使用 `async/await` 语法
+- 避免嵌套回调，保持代码扁平化
+- 长时间运行的操作要提供进度反馈
+- 所有Promise要包含错误处理
+
+## 📝 代码组织规范
+
+### 导入顺序
+1. Node.js 内置模块
+2. 第三方依赖
+3. 项目内部模块 (使用 `@/` 路径别名)
+4. 相对路径导入
+
+### 函数设计
+- 单个函数不超过50行
+- 函数功能单一，职责明确
+- 复杂逻辑要拆分成多个小函数
+- 添加详细的JSDoc注释
+
+### 代码注释
+- 关键业务逻辑必须添加中文注释
+- 复杂算法要说明实现思路
+- API接口要标注参数和返回值说明
+- 临时代码或TODO要明确标注

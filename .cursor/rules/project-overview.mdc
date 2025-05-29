@@ -1,0 +1,35 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 项目概览 - 漂流瓶Telegram机器人
+
+## 🎯 项目性质
+这是一个基于 Telegram 的漂流瓶社交机器人项目，用户可以投放、捡拾漂流瓶，并进行互动回复。项目集成了完整的积分系统、等级系统、成就系统和VIP商店功能。
+
+## 🏗️ 技术架构
+- **运行环境**: Node.js 18+
+- **编程语言**: TypeScript (严格模式)
+- **机器人框架**: Telegraf (Telegram Bot API)
+- **数据库**: SQLite3 + 事务安全
+- **Web服务器**: Express.js
+- **定时任务**: node-cron
+- **日志系统**: Winston
+- **代理支持**: HTTPS/SOCKS代理
+
+## 📁 核心目录结构
+- [src/index.ts](mdc:src/index.ts) - 主入口文件，初始化机器人和Express服务器
+- [src/bot/](mdc:src/bot/) - 机器人逻辑层
+- [src/services/](mdc:src/services/) - 业务服务层 
+- [src/types/](mdc:src/types/) - TypeScript类型定义
+- [src/utils/](mdc:src/utils/) - 工具函数和通用组件
+
+## 🎮 主要功能模块
+1. **漂流瓶系统** - 投放、捡拾、回复功能
+2. **积分系统** - 多种获取方式、时间加成、VIP倍数
+3. **等级系统** - 5个等级，不同权限和标识
+4. **商店系统** - 功能特权、体验增强、特殊物品
+5. **成就系统** - 多种成就解锁条件
+6. **广播系统** - 群组管理、定时推送
+7. **统计系统** - 个人/全局数据统计
