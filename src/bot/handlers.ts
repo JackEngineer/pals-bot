@@ -1,5 +1,6 @@
 import { Telegraf, Context } from 'telegraf';
 import { BottleService } from '../services/bottle-service';
+import { BroadcastService } from '../services/broadcast-service';
 import { formatThrowSuccess } from '../utils/message-formatter';
 import { logger } from '../utils/logger';
 
@@ -243,5 +244,111 @@ export function setupHandlers(bot: Telegraf<Context>) {
         );
     });
 
-    logger.info('✅ 漂流瓶消息处理器设置完成');
+    logger.info('✅ 所有消息处理器设置完成');
+
+    // 设置群组相关事件处理
+    setupGroupEventHandlers(bot);
+}
+
+// 设置群组相关事件处理
+function setupGroupEventHandlers(bot: Telegraf<Context>) {
+    // 机器人被添加到群组或频道
+    bot.on('my_chat_member', async (ctx) => {
+        try {
+            const newStatus = ctx.myChatMember.new_chat_member.status;
+            const oldStatus = ctx.myChatMember.old_chat_member.status;
+            
+            if (newStatus === 'member' || newStatus === 'administrator') {
+                // 机器人被添加到群组
+                logger.info(`机器人被添加到群组: ${ctx.chat.id}`);
+                await BroadcastService.registerChatGroup(ctx);
+                
+                // 💡 如需关闭广播，管理员可以使用 /broadcast_off 命令
+                // 如需重新开启，可以使用 /broadcast_on 命令
+                // 发送欢迎消息
+                const welcomeMessage = `🎉 感谢邀请漂流瓶机器人加入群组！
+
+🌊 我是一个漂流瓶机器人，可以帮助群组成员：
+• 分享有趣的漂流瓶消息
+• 获取定期的活动推广信息
+• 了解机器人的最新功能
+
+📢 本群组已启用广播功能，会定期收到精选内容推送
+
+🎯 开始你的漂流瓶之旅，点击下方按钮与机器人私聊：`;
+
+                try {
+                    await ctx.reply(welcomeMessage, {
+                        reply_markup: {
+                            inline_keyboard: [[
+                                {
+                                    text: '💬 私聊机器人',
+                                    url: `https://t.me/${ctx.botInfo.username}`
+                                }
+                            ]]
+                        }
+                    });
+                } catch (error) {
+                    logger.warn('发送群组欢迎消息失败:', error);
+                }
+                
+            } else if (newStatus === 'left' || newStatus === 'kicked') {
+                // 机器人被移除
+                logger.info(`机器人被移除出群组: ${ctx.chat.id}`);
+                await BroadcastService.markBotLeft(ctx.chat.id);
+            }
+        } catch (error) {
+            logger.error('处理群组成员变更事件失败:', error);
+        }
+    });
+
+    // 机器人被添加到群组（旧版事件，兼容性）
+    bot.on('new_chat_members', async (ctx) => {
+        try {
+            const botId = ctx.botInfo.id;
+            const newMembers = ctx.message.new_chat_members;
+            
+            // 检查是否包含机器人自己
+            const botAdded = newMembers?.some(member => member.id === botId);
+            
+            if (botAdded) {
+                logger.info(`机器人通过new_chat_members被添加到群组: ${ctx.chat.id}`);
+                await BroadcastService.registerChatGroup(ctx);
+            }
+        } catch (error) {
+            logger.error('处理new_chat_members事件失败:', error);
+        }
+    });
+
+    // 机器人被移除出群组（旧版事件，兼容性）
+    bot.on('left_chat_member', async (ctx) => {
+        try {
+            const botId = ctx.botInfo.id;
+            const leftMember = ctx.message.left_chat_member;
+            
+            if (leftMember.id === botId) {
+                logger.info(`机器人通过left_chat_member被移除出群组: ${ctx.chat.id}`);
+                await BroadcastService.markBotLeft(ctx.chat.id);
+            }
+        } catch (error) {
+            logger.error('处理left_chat_member事件失败:', error);
+        }
+    });
+
+    // 监听群组中的任何消息，以更新活跃时间
+    bot.use(async (ctx, next) => {
+        try {
+            // 仅处理群组消息
+            if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup')) {
+                // 更新群组活跃时间
+                await BroadcastService.registerChatGroup(ctx);
+            }
+        } catch (error) {
+            logger.error('更新群组活跃时间失败:', error);
+        }
+        
+        return next();
+    });
+
+    logger.info('✅ 群组事件处理器设置完成');
 } 

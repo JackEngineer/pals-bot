@@ -328,6 +328,65 @@ const initializeTables = async (): Promise<void> => {
             )
         `);
 
+        // 群组和频道信息表
+        await run(`
+            CREATE TABLE IF NOT EXISTS chat_groups (
+                chat_id INTEGER PRIMARY KEY,
+                chat_type TEXT NOT NULL CHECK (chat_type IN ('group', 'supergroup', 'channel')),
+                title TEXT,
+                username TEXT,
+                is_active BOOLEAN DEFAULT 1,
+                bot_status TEXT DEFAULT 'member' CHECK (bot_status IN ('member', 'administrator', 'left', 'kicked')),
+                added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_broadcast_at DATETIME,
+                broadcast_enabled BOOLEAN DEFAULT 1
+            )
+        `);
+
+        // 广播消息模板表
+        await run(`
+            CREATE TABLE IF NOT EXISTS broadcast_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                content TEXT NOT NULL,
+                media_type TEXT CHECK (media_type IN ('photo', 'voice', 'video', 'document')),
+                media_file_id TEXT,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // 广播记录表
+        await run(`
+            CREATE TABLE IF NOT EXISTS broadcast_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_id INTEGER,
+                chat_id INTEGER,
+                message_id INTEGER,
+                status TEXT NOT NULL CHECK (status IN ('sent', 'failed', 'blocked')),
+                error_message TEXT,
+                sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (template_id) REFERENCES broadcast_templates (id),
+                FOREIGN KEY (chat_id) REFERENCES chat_groups (chat_id)
+            )
+        `);
+
+        // 广播计划表
+        await run(`
+            CREATE TABLE IF NOT EXISTS broadcast_schedules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_id INTEGER NOT NULL,
+                cron_schedule TEXT NOT NULL,
+                is_active BOOLEAN DEFAULT 1,
+                last_run_at DATETIME,
+                next_run_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (template_id) REFERENCES broadcast_templates (id)
+            )
+        `);
+
         // 创建索引
         await run(`CREATE INDEX IF NOT EXISTS idx_bottles_active ON bottles (is_active, created_at)`);
         await run(`CREATE INDEX IF NOT EXISTS idx_bottles_sender ON bottles (sender_id)`);
@@ -352,6 +411,14 @@ const initializeTables = async (): Promise<void> => {
         // 创建用户信息相关索引
         await run(`CREATE INDEX IF NOT EXISTS idx_user_info_username ON user_info (username)`);
         await run(`CREATE INDEX IF NOT EXISTS idx_user_info_display_name ON user_info (display_name)`);
+
+        // 创建广播相关索引
+        await run(`CREATE INDEX IF NOT EXISTS idx_chat_groups_type ON chat_groups (chat_type, is_active)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_chat_groups_broadcast ON chat_groups (broadcast_enabled, is_active)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_broadcast_templates_active ON broadcast_templates (is_active)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_broadcast_logs_chat ON broadcast_logs (chat_id, sent_at)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_broadcast_logs_template ON broadcast_logs (template_id, status)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_broadcast_schedules_active ON broadcast_schedules (is_active, next_run_at)`);
 
         // 插入默认数据
         await insertDefaultData(run);
@@ -533,6 +600,64 @@ const insertDefaultData = async (run: any): Promise<void> => {
     }
 
     logger.info('默认积分系统数据插入完成');
+
+    // 插入默认广播模板
+    const defaultBroadcastTemplates = [
+        {
+            name: '日常活跃推广',
+            content: `🌊 漂流瓶机器人每日活跃中！
+
+📝 在这里你可以：
+• 投放漂流瓶，分享你的心情
+• 捡拾陌生人的瓶子，发现新世界
+• 与有趣的灵魂开始对话
+• 通过积分系统获得更多特权
+
+🎯 快来试试吧！发送 /start 开始你的漂流瓶之旅
+
+#漂流瓶 #社交 #交友`
+        },
+        {
+            name: '功能更新通知',
+            content: `🎉 漂流瓶机器人功能更新！
+
+✨ 新增功能：
+• 💰 积分系统：投放、捡拾瓶子获得积分
+• 🛒 积分商店：兑换特权和装饰
+• 🏆 等级系统：提升等级解锁更多功能
+• 👥 好友系统：与志趣相投的人成为朋友
+
+🚀 立即体验：/start
+
+#更新 #新功能`
+        },
+        {
+            name: '周末活动推广',
+            content: `🎪 周末漂流瓶狂欢！
+
+🎁 特殊活动：
+• 双倍积分周末！所有操作获得2倍积分
+• 稀有瓶子出现率提升50%
+• VIP用户额外获得幸运加成
+
+⏰ 活动时间：本周六日全天
+🔥 快来参与，不要错过！
+
+/start 加入活动
+
+#周末活动 #双倍积分`
+        }
+    ];
+
+    for (const template of defaultBroadcastTemplates) {
+        await run(`
+            INSERT OR IGNORE INTO broadcast_templates 
+            (name, content)
+            VALUES (?, ?)
+        `, [template.name, template.content]);
+    }
+
+    logger.info('默认广播模板插入完成');
 };
 
 export const getDatabase = (): sqlite3.Database => {

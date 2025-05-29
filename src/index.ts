@@ -10,6 +10,7 @@ import { setupLogger } from './utils/logger';
 import { BottleService } from './services/bottle-service';
 import { PointsService } from './services/points-service';
 import { NotificationService } from './services/notification-service';
+import { BroadcastService } from './services/broadcast-service';
 import { Scheduler } from './utils/scheduler';
 import { setupCommands } from './bot/commands';
 import { setupHandlers } from './bot/handlers';
@@ -127,6 +128,9 @@ class PalsBot {
             
             // 设置通知服务的bot实例
             NotificationService.setBotInstance(this.bot);
+            
+            // 设置广播服务的bot实例
+            BroadcastService.setBotInstance(this.bot);
             
             // 设置命令
             setupCommands(this.bot);
