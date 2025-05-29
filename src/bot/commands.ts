@@ -3,6 +3,7 @@ import { BottleService } from '../services/bottle-service';
 import { PointsService } from '../services/points-service';
 import { ChatService } from '../services/chat-service';
 import { NotificationService } from '../services/notification-service';
+import { FriendService } from '../services/friend-service';
 import { 
     formatBottleMessage, 
     formatUserStats, 
@@ -13,13 +14,16 @@ import {
 } from '../utils/message-formatter';
 import { logger } from '../utils/logger';
 
+// 存储待回复的漂流瓶ID (内存存储，实际项目中应该使用数据库)
+const pendingReplies = new Map<number, string>();
+
+// 存储已显示好友申请按钮的会话 (避免重复显示)
+const shownFriendButtons = new Set<string>();
+
 // 扩展 Context 以支持会话数据
 interface ExtendedContext extends Context {
     pendingReplies?: Map<number, string>;
 }
-
-// 存储待回复的漂流瓶ID (内存存储，实际项目中应该使用数据库)
-const pendingReplies = new Map<number, string>();
 
 export function setupCommands(bot: Telegraf<ExtendedContext>) {
     // 开始命令
@@ -766,6 +770,291 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                 return;
             }
 
+            // 申请添加好友按钮
+            if (callbackData.startsWith('add_friend_')) {
+                const sessionId = callbackData.replace('add_friend_', '');
+                
+                await ctx.answerCbQuery();
+                
+                // 编辑原消息，移除按钮
+                await ctx.editMessageReplyMarkup({
+                    inline_keyboard: []
+                });
+                
+                try {
+                    // 获取聊天会话信息
+                    const activeChat = await ChatService.getActiveChat(userId);
+                    if (!activeChat || activeChat.id !== sessionId) {
+                        await ctx.reply('❌ 找不到相关的聊天会话');
+                        return;
+                    }
+                    
+                    const partnerId = activeChat.user1_id === userId ? activeChat.user2_id : activeChat.user1_id;
+                    
+                    // 检查是否已经是好友
+                    const areFriends = await FriendService.areFriends(userId, partnerId);
+                    if (areFriends) {
+                        await ctx.reply('😊 你们已经是好友了！');
+                        return;
+                    }
+                    
+                    // 发送好友申请
+                    await FriendService.sendFriendRequest(userId, partnerId, sessionId, '希望能和你成为朋友！');
+                    
+                    // 获取最新的申请ID
+                    const request = await FriendService.getPendingRequest(userId, partnerId, sessionId);
+                    if (request) {
+                        // 通知对方收到好友申请
+                        await NotificationService.sendFriendRequestNotification(
+                            partnerId,
+                            {
+                                requesterId: userId,
+                                requesterUsername: username,
+                                requestId: request.id,
+                                sessionId: sessionId,
+                                message: request.message
+                            }
+                        );
+                        
+                        // 确认申请已发送
+                        await NotificationService.sendFriendRequestSentConfirmation(userId);
+                    }
+                    
+                } catch (error) {
+                    logger.error('发送好友申请失败:', error);
+                    if ((error as Error).message === '已经是好友关系') {
+                        await ctx.reply('😊 你们已经是好友了！');
+                    } else if ((error as Error).message === '已有待处理的好友申请') {
+                        await ctx.reply('📤 你已经向对方发送过好友申请，请耐心等待回复');
+                    } else {
+                        await ctx.reply('❌ 发送好友申请失败，请稍后重试');
+                    }
+                }
+                
+                return;
+            }
+
+            // 通过按钮结束聊天
+            if (callbackData.startsWith('end_chat_')) {
+                const sessionId = callbackData.replace('end_chat_', '');
+                
+                await ctx.answerCbQuery();
+                
+                // 编辑原消息，移除按钮
+                await ctx.editMessageReplyMarkup({
+                    inline_keyboard: []
+                });
+                
+                try {
+                    const activeChat = await ChatService.getActiveChat(userId);
+                    if (activeChat && activeChat.id === sessionId) {
+                        const partnerId = activeChat.user1_id === userId ? activeChat.user2_id : activeChat.user1_id;
+                        
+                        // 结束聊天会话
+                        await ChatService.endChatSession(userId);
+                        
+                        // 通知双方聊天结束
+                        await Promise.all([
+                            ctx.reply(
+                                `👋 聊天已结束\n\n` +
+                                `感谢这次愉快的交流！\n` +
+                                `继续探索更多漂流瓶吧 🌊`
+                            ),
+                            NotificationService.sendMessage(
+                                partnerId,
+                                `👋 对方结束了聊天\n\n` +
+                                `感谢这次愉快的交流！\n` +
+                                `继续探索更多漂流瓶吧 🌊`
+                            )
+                        ]);
+                    } else {
+                        await ctx.reply('🤔 你当前没有进行中的聊天会话');
+                    }
+                } catch (error) {
+                    logger.error('结束聊天失败:', error);
+                    await ctx.reply('❌ 结束聊天失败，请稍后重试');
+                }
+                
+                return;
+            }
+
+            // 接受好友申请按钮
+            if (callbackData.startsWith('accept_friend_')) {
+                const requestId = parseInt(callbackData.replace('accept_friend_', ''));
+                
+                await ctx.answerCbQuery();
+                
+                // 编辑原消息，移除按钮
+                await ctx.editMessageReplyMarkup({
+                    inline_keyboard: []
+                });
+                
+                try {
+                    // 获取申请信息
+                    const request = await FriendService.getFriendRequestById(requestId);
+                    if (!request || request.target_id !== userId) {
+                        await ctx.reply('❌ 找不到相关的好友申请');
+                        return;
+                    }
+                    
+                    // 接受好友申请
+                    await FriendService.acceptFriendRequest(requestId);
+                    
+                    // 通知双方成为好友
+                    await Promise.all([
+                        NotificationService.sendFriendRequestAcceptedNotification(
+                            request.requester_id,
+                            {
+                                friendId: userId,
+                                friendUsername: username
+                            }
+                        ),
+                        ctx.reply(
+                            `🎉 你接受了好友申请！\n\n` +
+                            `现在你们是好友了，可以查看对方信息并进行私聊 ✨`
+                        )
+                    ]);
+                    
+                } catch (error) {
+                    logger.error('接受好友申请失败:', error);
+                    await ctx.reply('❌ 接受好友申请失败，请稍后重试');
+                }
+                
+                return;
+            }
+
+            // 拒绝好友申请按钮
+            if (callbackData.startsWith('reject_friend_')) {
+                const requestId = parseInt(callbackData.replace('reject_friend_', ''));
+                
+                await ctx.answerCbQuery();
+                
+                // 编辑原消息，移除按钮
+                await ctx.editMessageReplyMarkup({
+                    inline_keyboard: []
+                });
+                
+                try {
+                    // 获取申请信息
+                    const request = await FriendService.getFriendRequestById(requestId);
+                    if (!request || request.target_id !== userId) {
+                        await ctx.reply('❌ 找不到相关的好友申请');
+                        return;
+                    }
+                    
+                    // 拒绝好友申请
+                    await FriendService.rejectFriendRequest(requestId);
+                    
+                    // 通知申请者被拒绝
+                    await NotificationService.sendFriendRequestRejectedNotification(request.requester_id, username);
+                    
+                    await ctx.reply(
+                        `😌 你礼貌地拒绝了好友申请\n\n` +
+                        `没关系，每个人都有选择的权利 💭`
+                    );
+                    
+                } catch (error) {
+                    logger.error('拒绝好友申请失败:', error);
+                    await ctx.reply('❌ 拒绝好友申请失败，请稍后重试');
+                }
+                
+                return;
+            }
+
+            // 私聊按钮
+            if (callbackData.startsWith('private_chat_')) {
+                const friendId = parseInt(callbackData.replace('private_chat_', ''));
+                
+                await ctx.answerCbQuery();
+                
+                try {
+                    // 检查是否为好友
+                    const areFriends = await FriendService.areFriends(userId, friendId);
+                    if (!areFriends) {
+                        await ctx.reply('❌ 你们不是好友关系');
+                        return;
+                    }
+                    
+                    // 获取好友信息并发送私聊启动通知
+                    await NotificationService.sendPrivateChatStartNotification(
+                        userId,
+                        {
+                            friendId: friendId,
+                            friendUsername: `user${friendId}` // 这里可以从数据库获取真实用户名
+                        }
+                    );
+                    
+                } catch (error) {
+                    logger.error('启动私聊失败:', error);
+                    await ctx.reply('❌ 启动私聊失败，请稍后重试');
+                }
+                
+                return;
+            }
+
+            // 查看资料按钮
+            if (callbackData.startsWith('view_profile_')) {
+                const friendId = parseInt(callbackData.replace('view_profile_', ''));
+                
+                await ctx.answerCbQuery();
+                
+                try {
+                    // 检查是否为好友
+                    const areFriends = await FriendService.areFriends(userId, friendId);
+                    if (!areFriends) {
+                        await ctx.reply('❌ 你们不是好友关系');
+                        return;
+                    }
+                    
+                    // 发送用户资料
+                    await NotificationService.sendUserProfile(
+                        userId,
+                        {
+                            friendId: friendId,
+                            friendUsername: `user${friendId}`,
+                            friendDisplayName: `用户 ${friendId}`,
+                            addedDate: '最近'
+                        }
+                    );
+                    
+                } catch (error) {
+                    logger.error('查看资料失败:', error);
+                    await ctx.reply('❌ 查看资料失败，请稍后重试');
+                }
+                
+                return;
+            }
+
+            // 删除好友按钮
+            if (callbackData.startsWith('remove_friend_')) {
+                const friendId = parseInt(callbackData.replace('remove_friend_', ''));
+                
+                await ctx.answerCbQuery();
+                
+                try {
+                    // 检查是否为好友
+                    const areFriends = await FriendService.areFriends(userId, friendId);
+                    if (!areFriends) {
+                        await ctx.reply('❌ 你们不是好友关系');
+                        return;
+                    }
+                    
+                    // 删除好友关系
+                    await FriendService.removeFriend(userId, friendId);
+                    
+                    await ctx.reply(
+                        `💔 已删除好友关系\n\n` +
+                        `你们不再是好友了，但美好的回忆会一直存在 🌊`
+                    );
+                    
+                } catch (error) {
+                    logger.error('删除好友失败:', error);
+                    await ctx.reply('❌ 删除好友失败，请稍后重试');
+                }
+                
+                return;
+            }
+
             // 回复漂流瓶按钮（保留原有逻辑）
             if (callbackData.startsWith('reply_')) {
                 const bottleId = callbackData.replace('reply_', '');
@@ -913,6 +1202,105 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
         }
     });
 
+    // 好友管理命令
+    bot.command('friends', async (ctx) => {
+        try {
+            const userId = ctx.from?.id;
+            
+            if (!userId) {
+                await ctx.reply('❌ 无法获取用户信息');
+                return;
+            }
+
+            const [friendStats, friends, pendingReceived] = await Promise.all([
+                FriendService.getFriendStats(userId),
+                FriendService.getFriends(userId),
+                FriendService.getPendingRequestsReceived(userId)
+            ]);
+
+            let message = `👫 好友管理\n\n`;
+            message += `📊 统计信息:\n`;
+            message += `• 好友数量: ${friendStats.totalFriends}\n`;
+            message += `• 待处理申请: ${friendStats.pendingRequestsReceived}\n`;
+            message += `• 已发送申请: ${friendStats.pendingRequestsSent}\n\n`;
+
+            if (friends.length > 0) {
+                message += `👥 好友列表:\n`;
+                friends.slice(0, 5).forEach((friendId, index) => {
+                    message += `${index + 1}. 用户 ${friendId}\n`;
+                });
+                if (friends.length > 5) {
+                    message += `... 还有 ${friends.length - 5} 位好友\n`;
+                }
+                message += `\n`;
+            }
+
+            if (pendingReceived.length > 0) {
+                message += `📨 待处理申请:\n`;
+                pendingReceived.slice(0, 3).forEach((request, index) => {
+                    message += `${index + 1}. 来自用户 ${request.requester_id}\n`;
+                });
+                if (pendingReceived.length > 3) {
+                    message += `... 还有 ${pendingReceived.length - 3} 个申请\n`;
+                }
+            }
+
+            message += `\n💡 提示: 通过漂流瓶聊天可以申请添加好友！`;
+
+            await ctx.reply(message);
+
+        } catch (error) {
+            logger.error('获取好友信息失败:', error);
+            await ctx.reply('❌ 获取好友信息失败，请稍后重试');
+        }
+    });
+
+    // 调试命令 - 检查聊天消息计数
+    bot.command('debug_chat', async (ctx) => {
+        try {
+            const userId = ctx.from?.id;
+            
+            if (!userId) {
+                await ctx.reply('❌ 无法获取用户信息');
+                return;
+            }
+
+            const activeChat = await ChatService.getActiveChat(userId);
+            if (!activeChat) {
+                await ctx.reply('🤔 你当前没有进行中的聊天会话');
+                return;
+            }
+
+            const partnerId = activeChat.user1_id === userId ? activeChat.user2_id : activeChat.user1_id;
+            const messageCount = await ChatService.getSessionMessageCount(activeChat.id);
+            const shouldShowButton = await ChatService.shouldShowFriendRequestButton(activeChat.id, 10);
+            const areFriends = await FriendService.areFriends(userId, partnerId);
+            const messageDistribution = await ChatService.getSessionMessageDistribution(activeChat.id);
+
+            let debugMessage = `🔍 聊天调试信息\n\n`;
+            debugMessage += `🆔 会话ID: ${activeChat.id}\n`;
+            debugMessage += `👥 聊天双方: ${activeChat.user1_id} <-> ${activeChat.user2_id}\n`;
+            debugMessage += `📊 总消息数: ${messageCount}\n`;
+            debugMessage += `📈 消息分布:\n`;
+            debugMessage += `  • 用户 ${activeChat.user1_id}: ${messageDistribution.user1Messages} 条\n`;
+            debugMessage += `  • 用户 ${activeChat.user2_id}: ${messageDistribution.user2Messages} 条\n`;
+            debugMessage += `✅ 达到阈值: ${shouldShowButton ? '是' : '否'} (>= 10条)\n`;
+            debugMessage += `🔄 已显示按钮: ${shownFriendButtons.has(activeChat.id) ? '是' : '否'}\n`;
+            debugMessage += `👫 已是好友: ${areFriends ? '是' : '否'}\n`;
+            debugMessage += `🎮 按钮显示条件: ${shouldShowButton && !shownFriendButtons.has(activeChat.id) ? '满足' : '不满足'}\n\n`;
+            debugMessage += `💡 说明:\n`;
+            debugMessage += `- 需要消息数≥10条时首次显示按钮\n`;
+            debugMessage += `- 每个会话只显示一次按钮\n`;
+            debugMessage += `- 好友和非好友都会显示相应的互动选项`;
+
+            await ctx.reply(debugMessage);
+
+        } catch (error) {
+            logger.error('调试聊天失败:', error);
+            await ctx.reply('❌ 调试失败，请稍后重试');
+        }
+    });
+
     // 处理聊天消息转发
     bot.on('message', async (ctx, next) => {
         try {
@@ -982,6 +1370,33 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
                             messageContent,
                             mediaType
                         );
+                        
+                        // 检查是否需要显示好友申请按钮
+                        const shouldShowButton = await ChatService.shouldShowFriendRequestButton(activeChat.id, 10);
+                        const messageCount = await ChatService.getSessionMessageCount(activeChat.id);
+                        
+                        // 当消息数达到10条且未显示过按钮时显示（避免重复显示）
+                        if (shouldShowButton && !shownFriendButtons.has(activeChat.id)) {
+                            // 记录已显示按钮，避免重复
+                            shownFriendButtons.add(activeChat.id);
+                            
+                            // 检查双方是否已经是好友
+                            const areFriends = await FriendService.areFriends(userId, partnerId);
+                            
+                            if (areFriends) {
+                                // 如果已是好友，发送好友互动选项
+                                await Promise.all([
+                                    NotificationService.sendFriendInteractionOptions(userId, activeChat.id, messageCount, partnerId),
+                                    NotificationService.sendFriendInteractionOptions(partnerId, activeChat.id, messageCount, userId)
+                                ]);
+                            } else {
+                                // 如果不是好友，发送好友申请选项
+                                await Promise.all([
+                                    NotificationService.sendInteractionOptions(userId, activeChat.id, messageCount),
+                                    NotificationService.sendInteractionOptions(partnerId, activeChat.id, messageCount)
+                                ]);
+                            }
+                        }
                         
                         // 匿名消息已发送
                         await ctx.reply('咻~ 匿名消息已发送，输入 /endchat 可结束聊天');
@@ -1058,4 +1473,4 @@ export function setupCommands(bot: Telegraf<ExtendedContext>) {
     });
 
     logger.info('✅ 漂流瓶命令设置完成（包含积分系统）');
-} 
+}

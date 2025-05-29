@@ -246,6 +246,198 @@ class NotificationService {
             return await this.sendMessage(targetUserId, messagePrefix + messageContent);
         }
     }
+
+    // 发送互动选项按钮（好友申请 + 结束聊天）
+    static async sendInteractionOptions(
+        userId: number,
+        sessionId: string,
+        messageCount: number
+    ) {
+        const message = 
+            `🎉 你们已经互动了 ${messageCount} 条消息！\n\n` +
+            `看起来你们聊得很愉快，要不要进一步认识呢？\n` +
+            `你可以申请添加对方为好友，或者结束这次聊天 💭`;
+
+        const replyMarkup = {
+            inline_keyboard: [[
+                { text: '👫 申请添加好友', callback_data: `add_friend_${sessionId}` },
+                { text: '👋 结束聊天', callback_data: `end_chat_${sessionId}` }
+            ]]
+        };
+
+        return await this.sendMessage(userId, message, { reply_markup: replyMarkup });
+    }
+
+    // 发送好友互动选项按钮（查看资料 + 私聊 + 结束聊天）
+    static async sendFriendInteractionOptions(
+        userId: number,
+        sessionId: string,
+        messageCount: number,
+        friendId: number
+    ) {
+        const message = 
+            `🎉 你们已经互动了 ${messageCount} 条消息！\n\n` +
+            `你们已经是好友了！可以选择查看对方资料或开启私聊 👫\n` +
+            `也可以继续当前的匿名聊天或结束对话 💭`;
+
+        const replyMarkup = {
+            inline_keyboard: [
+                [
+                    { text: '👤 查看好友资料', callback_data: `view_profile_${friendId}` },
+                    { text: '💬 开启私聊', callback_data: `private_chat_${friendId}` }
+                ],
+                [
+                    { text: '👋 结束聊天', callback_data: `end_chat_${sessionId}` }
+                ]
+            ]
+        };
+
+        return await this.sendMessage(userId, message, { reply_markup: replyMarkup });
+    }
+
+    // 发送好友申请通知
+    static async sendFriendRequestNotification(
+        targetUserId: number,
+        requesterData: {
+            requesterId: number;
+            requesterUsername?: string;
+            requestId: number;
+            sessionId: string;
+            message?: string;
+        }
+    ) {
+        const requesterDisplay = '匿名朋友';
+        
+        let notificationMessage = 
+            `💌 有人向你发送了好友申请！\n\n` +
+            `👤 来自: ${requesterDisplay}\n` +
+            `💬 来源: 匿名聊天\n`;
+
+        if (requesterData.message) {
+            notificationMessage += `📝 留言: ${requesterData.message}\n`;
+        }
+
+        notificationMessage += `\n你愿意成为朋友吗？`;
+
+        const replyMarkup = {
+            inline_keyboard: [[
+                { text: '✅ 接受申请', callback_data: `accept_friend_${requesterData.requestId}` },
+                { text: '❌ 礼貌拒绝', callback_data: `reject_friend_${requesterData.requestId}` }
+            ]]
+        };
+
+        return await this.sendMessage(targetUserId, notificationMessage, { reply_markup: replyMarkup });
+    }
+
+    // 发送好友申请接受通知
+    static async sendFriendRequestAcceptedNotification(
+        userId: number,
+        friendData: {
+            friendId: number;
+            friendUsername?: string;
+        }
+    ) {
+        const friendDisplay = '匿名朋友';
+        
+        const message = 
+            `🎉 ${friendDisplay} 接受了你的好友申请！\n\n` +
+            `现在你们已经是好友了，可以查看对方的基本信息\n` +
+            `点击下方按钮开始私聊吧！ ✨`;
+
+        const replyMarkup = {
+            inline_keyboard: [[
+                { text: '💬 去私聊', callback_data: `private_chat_${friendData.friendId}` },
+                { text: '👤 查看资料', callback_data: `view_profile_${friendData.friendId}` }
+            ]]
+        };
+
+        return await this.sendMessage(userId, message, { reply_markup: replyMarkup });
+    }
+
+    // 发送好友申请拒绝通知
+    static async sendFriendRequestRejectedNotification(
+        userId: number,
+        targetUserName?: string
+    ) {
+        const targetDisplay = '对方';
+        
+        const message = 
+            `😔 ${targetDisplay} 暂时不想添加好友\n\n` +
+            `没关系，继续保持这份美好的匿名友谊吧！\n` +
+            `或者继续探索更多漂流瓶 🌊`;
+
+        return await this.sendMessage(userId, message);
+    }
+
+    // 发送好友申请已发送确认
+    static async sendFriendRequestSentConfirmation(
+        userId: number,
+        targetUserName?: string
+    ) {
+        const targetDisplay = '对方';
+        
+        const message = 
+            `💌 好友申请已发送给 ${targetDisplay}！\n\n` +
+            `请耐心等待回复，我会第一时间通知你结果 ✨\n` +
+            `在此期间，你们还可以继续愉快聊天～`;
+
+        return await this.sendMessage(userId, message);
+    }
+
+    // 发送私聊开始通知
+    static async sendPrivateChatStartNotification(
+        userId: number,
+        friendData: {
+            friendId: number;
+            friendUsername?: string;
+            friendDisplayName?: string;
+        }
+    ) {
+        const friendDisplay = friendData.friendDisplayName || friendData.friendUsername || `用户 ${friendData.friendId}`;
+        
+        const message = 
+            `💬 私聊已开启！\n\n` +
+            `现在你正在与 ${friendDisplay} 私聊\n` +
+            `消息将直接发送给对方，不再通过机器人中转\n` +
+            `点击 @${friendData.friendUsername || 'telegram_user'} 开始对话吧！`;
+
+        const replyMarkup = {
+            inline_keyboard: [[
+                { text: '📱 打开私聊', url: `tg://user?id=${friendData.friendId}` }
+            ]]
+        };
+
+        return await this.sendMessage(userId, message, { reply_markup: replyMarkup });
+    }
+
+    // 显示用户资料
+    static async sendUserProfile(
+        userId: number,
+        profileData: {
+            friendId: number;
+            friendUsername?: string;
+            friendDisplayName?: string;
+            addedDate: string;
+        }
+    ) {
+        const friendDisplay = profileData.friendDisplayName || profileData.friendUsername || `用户 ${profileData.friendId}`;
+        
+        const message = 
+            `👤 好友资料\n\n` +
+            `🏷️ 昵称: ${friendDisplay}\n` +
+            `🆔 用户ID: ${profileData.friendId}\n` +
+            `📅 成为好友: ${profileData.addedDate}\n` +
+            `💭 来源: 漂流瓶匿名聊天`;
+
+        const replyMarkup = {
+            inline_keyboard: [[
+                { text: '💬 私聊', callback_data: `private_chat_${profileData.friendId}` },
+                { text: '❌ 删除好友', callback_data: `remove_friend_${profileData.friendId}` }
+            ]]
+        };
+
+        return await this.sendMessage(userId, message, { reply_markup: replyMarkup });
+    }
 }
 
 export { NotificationService }; 

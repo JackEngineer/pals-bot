@@ -287,6 +287,34 @@ const initializeTables = async (): Promise<void> => {
             )
         `);
 
+        // 好友关系表
+        await run(`
+            CREATE TABLE IF NOT EXISTS friendships (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user1_id INTEGER NOT NULL,
+                user2_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'blocked')),
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user1_id, user2_id),
+                CHECK(user1_id < user2_id)
+            )
+        `);
+
+        // 好友申请表
+        await run(`
+            CREATE TABLE IF NOT EXISTS friend_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                requester_id INTEGER NOT NULL,
+                target_id INTEGER NOT NULL,
+                session_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected', 'cancelled')),
+                message TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(requester_id, target_id, session_id)
+            )
+        `);
+
         // 创建索引
         await run(`CREATE INDEX IF NOT EXISTS idx_bottles_active ON bottles (is_active, created_at)`);
         await run(`CREATE INDEX IF NOT EXISTS idx_bottles_sender ON bottles (sender_id)`);
@@ -301,6 +329,12 @@ const initializeTables = async (): Promise<void> => {
         // 创建聊天相关索引
         await run(`CREATE INDEX IF NOT EXISTS idx_chat_sessions_users ON chat_sessions (user1_id, user2_id, status)`);
         await run(`CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages (session_id)`);
+
+        // 创建好友相关索引
+        await run(`CREATE INDEX IF NOT EXISTS idx_friendships_users ON friendships (user1_id, user2_id, status)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_friend_requests_target ON friend_requests (target_id, status)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_friend_requests_requester ON friend_requests (requester_id, status)`);
+        await run(`CREATE INDEX IF NOT EXISTS idx_friend_requests_session ON friend_requests (session_id)`);
 
         // 插入默认数据
         await insertDefaultData(run);
