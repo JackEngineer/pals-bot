@@ -81,9 +81,6 @@ export class BottleService {
     // 随机捡拾漂流瓶
     static async pickBottle(userId: number): Promise<Bottle | null> {
         try {
-            // 首先在事务外检查特权状态
-            const hasReplyPriority = await PointsService.checkUserPurchase(userId, 'reply_priority_24h');
-            
             // 在事务中执行核心数据库操作
             const result = await dbExecuteInTransaction(async () => {
                 // 查找可用的漂流瓶（排除自己投放的和自己已丢弃的）
@@ -98,6 +95,13 @@ export class BottleService {
                     ORDER BY RANDOM() 
                     LIMIT 10
                 `;
+                
+                // 在事务内检查特权状态（不涉及其他事务）
+                const hasReplyPriority = await dbGet(`
+                    SELECT * FROM user_purchases 
+                    WHERE user_id = ? AND item_id = 'reply_priority_24h' AND status = 'active'
+                    AND (expires_at IS NULL OR expires_at > ?)
+                `, [userId, getCurrentTimestamp()]);
                 
                 if (hasReplyPriority) {
                     // 优先显示回复较少的瓶子

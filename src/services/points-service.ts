@@ -131,7 +131,8 @@ export class PointsService {
         action: string,
         description: string,
         referenceId?: string,
-        username?: string
+        username?: string,
+        skipAchievementCheck: boolean = false
     ): Promise<IPointsTransaction> {
         try {
             // 计算积分倍数
@@ -149,8 +150,10 @@ export class PointsService {
             // 更新用户积分
             await this.updateUserPoints(userId, finalAmount, username);
 
-            // 检查成就
-            await this.checkAchievements(userId);
+            // 检查成就（避免递归调用）
+            if (!skipAchievementCheck) {
+                await this.checkAchievements(userId);
+            }
 
             const transaction = await dbGet(`
                 SELECT * FROM points_transactions WHERE id = ?
@@ -595,13 +598,15 @@ export class PointsService {
                 VALUES (?, ?, ?, ?, ?)
             `, [achievementId, userId, achievement.id, achievement.name, achievement.reward_points]);
 
-            // 添加成就奖励积分
+            // 添加成就奖励积分（跳过成就检查避免递归）
             await this.addPoints(
                 userId,
                 achievement.reward_points,
                 'achievement',
                 `解锁成就: ${achievement.name}`,
-                achievementId
+                achievementId,
+                undefined,
+                true // 跳过成就检查
             );
 
             logger.info(`用户 ${userId} 解锁成就: ${achievement.name}`);
