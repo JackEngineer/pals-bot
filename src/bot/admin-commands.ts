@@ -65,21 +65,29 @@ export function setupAdminCommands(bot: Telegraf<ExtendedContext>) {
     // 手动执行广播 (仅私聊，管理员专用)
     bot.command('admin_broadcast', async (ctx) => {
         try {
+            // 添加调试日志
+            logger.info(`admin_broadcast命令被调用: 用户ID ${ctx.from?.id}, 聊天类型 ${ctx.chat.type}`);
+            
             // 仅在私聊中使用
             if (ctx.chat.type !== 'private') {
+                logger.warn(`admin_broadcast命令在非私聊中使用: ${ctx.chat.type}`);
                 await ctx.reply('❌ 此命令只能在私聊中使用');
                 return;
             }
 
             const userId = ctx.from?.id;
             if (!userId) {
+                logger.warn('admin_broadcast命令: 无法获取用户信息');
                 await ctx.reply('❌ 无法获取用户信息');
                 return;
             }
 
             // 检查是否是超级管理员（可以通过环境变量设置）
             const adminIds = process.env.ADMIN_USER_IDS?.split(',').map(id => parseInt(id.trim())) || [];
+            logger.info(`检查管理员权限: 用户${userId}, 管理员列表[${adminIds.join(', ')}]`);
+            
             if (!adminIds.includes(userId)) {
+                logger.warn(`用户${userId}权限不足，不在管理员列表中`);
                 await ctx.reply('❌ 权限不足');
                 return;
             }
@@ -186,6 +194,11 @@ export function setupAdminCommands(bot: Telegraf<ExtendedContext>) {
             logger.error('管理员广播命令失败:', error);
             await ctx.reply('❌ 命令执行失败，请稍后重试');
         }
+    });
+
+    // 常见拼写错误的友好提示
+    bot.command('admin_brodcast', async (ctx) => {
+        await ctx.reply('❌ 命令拼写错误！\n\n正确的命令是: /admin_broadcast\n注意是 "broadcast" 不是 "brodcast"');
     });
 
     logger.info('✅ 管理员命令设置完成');

@@ -10,7 +10,7 @@
     "clean": "rimraf dist",
     "lint": "eslint src/**/*.ts",
     "test": "jest",
-    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:start": "npm run build && pm2 start ecosystem.config.js",
     "pm2:stop": "pm2 stop pals-bot",
     "pm2:restart": "pm2 restart pals-bot",
     "pm2:logs": "pm2 logs pals-bot"

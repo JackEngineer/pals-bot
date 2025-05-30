@@ -26,6 +26,10 @@ export function setupMessageHandlers(bot: Telegraf<ExtendedContext>) {
 
             // 自动更新用户信息（只在私聊中更新，避免群组消息频繁更新）
             if (isPrivateChat) {
+                // 添加私聊消息日志
+                const messageText = 'text' in ctx.message ? ctx.message.text : '非文本消息';
+                logger.info(`私聊消息: 用户${userId} 发送消息: ${messageText?.substring(0, 50) || '无内容'}`);
+                
                 try {
                     await UserService.updateUserInfo(userId, {
                         username: ctx.from?.username,

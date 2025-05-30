@@ -15,8 +15,11 @@ import { ExtendedContext, pendingReplies, currentlyViewing } from './command-sta
 
 export function setupBasicCommands(bot: Telegraf<ExtendedContext>) {
     // 开始命令
-    bot.start((ctx) => {
-        ctx.reply(
+    bot.start(async (ctx) => {
+        // 添加调试日志
+        logger.info(`/start命令被调用: 用户${ctx.from?.id}, 聊天类型${ctx.chat.type}, 机器人用户名: ${ctx.botInfo?.username}`);
+        
+        await ctx.reply(
             `🌊 欢迎来到漂流瓶世界！\n\n` +
             `这里你可以:\n` +
             `📝 投放漂流瓶 - 分享你的心情和想法\n` +
@@ -24,6 +27,8 @@ export function setupBasicCommands(bot: Telegraf<ExtendedContext>) {
             `💬 回复漂流瓶 - 与陌生人交流\n` +
             `💰 积分系统 - 参与互动获得奖励\n\n` +
             `开始你的漂流瓶之旅吧！ 🚀\n\n` +
+            `机器人用户名: @${ctx.botInfo?.username || '未知'}\n` +
+            `当前聊天类型: ${ctx.chat.type}\n\n` +
             `使用 /help 查看详细帮助`
         );
     });

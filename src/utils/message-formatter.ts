@@ -92,7 +92,7 @@ export function formatThrowSuccess(bottleId: string, content: string): string {
     return (
         `🌊 漂流瓶投放成功！\n\n` +
         `📝 内容: ${content}\n` +
-        `🆔 瓶子编号: ${bottleId}\n` +
+        // `🆔 瓶子编号: ${bottleId}\n` +
         `⏰ 投放时间: ${moment().format('YYYY-MM-DD HH:mm:ss')}\n\n` +
         `你的漂流瓶正在大海中漂流，等待有缘人捡拾... 🌊\n` +
         `💰 投放奖励: +10积分`
