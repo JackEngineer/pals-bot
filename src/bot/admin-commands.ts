@@ -2,6 +2,7 @@ import { Telegraf } from 'telegraf';
 import { BroadcastService } from '../services/broadcast-service';
 import { logger } from '../utils/logger';
 import { ExtendedContext } from './command-state';
+import { TelegramRetryHandler } from '../utils/telegram-retry';
 
 export function setupAdminCommands(bot: Telegraf<ExtendedContext>) {
     // 开启/关闭群组广播
@@ -24,7 +25,10 @@ export function setupAdminCommands(bot: Telegraf<ExtendedContext>) {
             }
 
             try {
-                const member = await ctx.telegram.getChatMember(ctx.chat.id, userId);
+                const member = await TelegramRetryHandler.executeWithRetry(
+                    () => ctx.telegram.getChatMember(ctx.chat.id, userId),
+                    'getChatMember for admin check'
+                );
                 const isAdmin = member.status === 'administrator' || member.status === 'creator';
                 
                 if (!isAdmin) {

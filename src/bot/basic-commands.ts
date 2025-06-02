@@ -12,6 +12,7 @@ import {
 } from '../utils/message-formatter';
 import { logger } from '../utils/logger';
 import { ExtendedContext, pendingReplies, currentlyViewing } from './command-state';
+import { TelegramRetryHandler } from '../utils/telegram-retry';
 
 export function setupBasicCommands(bot: Telegraf<ExtendedContext>) {
     // 开始命令
@@ -54,20 +55,31 @@ export function setupBasicCommands(bot: Telegraf<ExtendedContext>) {
             
             if (isGroupMessage) {
                 // 在群组中提醒用户私聊Bot
-                const botInfo = await ctx.telegram.getMe();
-                await ctx.reply(
-                    `🔒 漂流瓶功能需要在私聊中使用\n\n` +
-                    `为了保护您的隐私，请私聊我来投放漂流瓶：\n` +
-                    `👆 点击我的用户名 @${botInfo.username} 开始私聊\n\n` +
-                    `💡 然后发送: /throw 你的漂流瓶内容`,
-                    {
-                        reply_markup: {
-                            inline_keyboard: [[
-                                { text: '📱 开始私聊', url: `https://t.me/${botInfo.username}` }
-                            ]]
+                try {
+                    const botInfo = await TelegramRetryHandler.executeWithRetry(
+                        () => ctx.telegram.getMe(),
+                        'getMe for throw command'
+                    );
+                    await ctx.reply(
+                        `🔒 漂流瓶功能需要在私聊中使用\n\n` +
+                        `为了保护您的隐私，请私聊我来投放漂流瓶：\n` +
+                        `👆 点击我的用户名 @${botInfo.username} 开始私聊\n\n` +
+                        `💡 然后发送: /throw 你的漂流瓶内容`,
+                        {
+                            reply_markup: {
+                                inline_keyboard: [[
+                                    { text: '📱 开始私聊', url: `https://t.me/${botInfo.username}` }
+                                ]]
+                            }
                         }
-                    }
-                );
+                    );
+                } catch (error) {
+                    logger.error('获取机器人信息失败:', error);
+                    await ctx.reply(
+                        `🔒 漂流瓶功能需要在私聊中使用\n\n` +
+                        `请私聊我来投放漂流瓶 💬`
+                    );
+                }
                 return;
             }
 
@@ -113,20 +125,31 @@ export function setupBasicCommands(bot: Telegraf<ExtendedContext>) {
             
             if (isGroupMessage) {
                 // 在群组中提醒用户私聊Bot
-                const botInfo = await ctx.telegram.getMe();
-                await ctx.reply(
-                    `🔒 漂流瓶功能需要在私聊中使用\n\n` +
-                    `为了保护您的隐私，请私聊我来捡拾漂流瓶：\n` +
-                    `👆 点击我的用户名 @${botInfo.username} 开始私聊\n\n` +
-                    `💡 然后发送: /pick`,
-                    {
-                        reply_markup: {
-                            inline_keyboard: [[
-                                { text: '📱 开始私聊', url: `https://t.me/${botInfo.username}` }
-                            ]]
+                try {
+                    const botInfo = await TelegramRetryHandler.executeWithRetry(
+                        () => ctx.telegram.getMe(),
+                        'getMe for pick command'
+                    );
+                    await ctx.reply(
+                        `🔒 漂流瓶功能需要在私聊中使用\n\n` +
+                        `为了保护您的隐私，请私聊我来捡拾漂流瓶：\n` +
+                        `👆 点击我的用户名 @${botInfo.username} 开始私聊\n\n` +
+                        `💡 然后发送: /pick`,
+                        {
+                            reply_markup: {
+                                inline_keyboard: [[
+                                    { text: '📱 开始私聊', url: `https://t.me/${botInfo.username}` }
+                                ]]
+                            }
                         }
-                    }
-                );
+                    );
+                } catch (error) {
+                    logger.error('获取机器人信息失败:', error);
+                    await ctx.reply(
+                        `🔒 漂流瓶功能需要在私聊中使用\n\n` +
+                        `请私聊我来捡拾漂流瓶 💬`
+                    );
+                }
                 return;
             }
 
@@ -206,20 +229,31 @@ export function setupBasicCommands(bot: Telegraf<ExtendedContext>) {
             
             if (isGroupMessage) {
                 // 在群组中提醒用户私聊Bot
-                const botInfo = await ctx.telegram.getMe();
-                await ctx.reply(
-                    `🔒 漂流瓶功能需要在私聊中使用\n\n` +
-                    `为了保护您的隐私，请私聊我来回复漂流瓶：\n` +
-                    `👆 点击我的用户名 @${botInfo.username} 开始私聊\n\n` +
-                    `💡 然后发送: /reply <瓶子ID> <回复内容>`,
-                    {
-                        reply_markup: {
-                            inline_keyboard: [[
-                                { text: '📱 开始私聊', url: `https://t.me/${botInfo.username}` }
-                            ]]
+                try {
+                    const botInfo = await TelegramRetryHandler.executeWithRetry(
+                        () => ctx.telegram.getMe(),
+                        'getMe for reply command'
+                    );
+                    await ctx.reply(
+                        `🔒 漂流瓶功能需要在私聊中使用\n\n` +
+                        `为了保护您的隐私，请私聊我来回复漂流瓶：\n` +
+                        `👆 点击我的用户名 @${botInfo.username} 开始私聊\n\n` +
+                        `💡 然后发送: /reply <瓶子ID> <回复内容>`,
+                        {
+                            reply_markup: {
+                                inline_keyboard: [[
+                                    { text: '📱 开始私聊', url: `https://t.me/${botInfo.username}` }
+                                ]]
+                            }
                         }
-                    }
-                );
+                    );
+                } catch (error) {
+                    logger.error('获取机器人信息失败:', error);
+                    await ctx.reply(
+                        `🔒 漂流瓶功能需要在私聊中使用\n\n` +
+                        `请私聊我来回复漂流瓶 💬`
+                    );
+                }
                 return;
             }
 

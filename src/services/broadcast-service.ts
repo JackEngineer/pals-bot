@@ -1,6 +1,9 @@
-import { Telegraf, Context } from 'telegraf';
+import { Database } from 'sqlite3';
+import { Telegraf } from 'telegraf';
+import { Context } from 'telegraf';
 import { dbGet, dbAll, dbRun } from './database';
 import { logger } from '../utils/logger';
+import { TelegramRetryHandler } from '../utils/telegram-retry';
 
 // 接口定义
 export interface ChatGroup {
@@ -290,7 +293,10 @@ export class BroadcastService {
         // 获取机器人信息，用于构建私聊链接
         let botUsername = '';
         try {
-            const botInfo = await this.bot.telegram.getMe();
+            const botInfo = await TelegramRetryHandler.executeWithRetry(
+                () => this.bot!.telegram.getMe(),
+                'getMe for broadcast username'
+            );
             botUsername = botInfo.username || '';
         } catch (error) {
             logger.error('获取机器人信息失败:', error);
@@ -333,69 +339,80 @@ export class BroadcastService {
 
                 let messageId: number | undefined;
 
-                // 根据媒体类型发送不同的消息
-                if (template.media_type && template.media_file_id) {
-                    switch (template.media_type) {
-                        case 'photo':
-                            const photoMsg = await this.bot.telegram.sendPhoto(
-                                group.chat_id,
-                                template.media_file_id,
-                                { 
-                                    caption: template.content,
-                                    reply_markup: replyMarkup
-                                }
-                            );
-                            messageId = photoMsg.message_id;
-                            break;
-                        case 'voice':
-                            const voiceMsg = await this.bot.telegram.sendVoice(
-                                group.chat_id,
-                                template.media_file_id,
-                                { 
-                                    caption: template.content,
-                                    reply_markup: replyMarkup
-                                }
-                            );
-                            messageId = voiceMsg.message_id;
-                            break;
-                        case 'video':
-                            const videoMsg = await this.bot.telegram.sendVideo(
-                                group.chat_id,
-                                template.media_file_id,
-                                { 
-                                    caption: template.content,
-                                    reply_markup: replyMarkup
-                                }
-                            );
-                            messageId = videoMsg.message_id;
-                            break;
-                        case 'document':
-                            const docMsg = await this.bot.telegram.sendDocument(
-                                group.chat_id,
-                                template.media_file_id,
-                                { 
-                                    caption: template.content,
-                                    reply_markup: replyMarkup
-                                }
-                            );
-                            messageId = docMsg.message_id;
-                            break;
-                        default:
-                            const textMsg = await this.bot.telegram.sendMessage(
-                                group.chat_id,
-                                template.content,
-                                { reply_markup: replyMarkup }
-                            );
-                            messageId = textMsg.message_id;
+                // 使用重试机制发送消息
+                const sendOperation = async () => {
+                    // 根据媒体类型发送不同的消息
+                    if (template.media_type && template.media_file_id) {
+                        switch (template.media_type) {
+                            case 'photo':
+                                const photoMsg = await this.bot!.telegram.sendPhoto(
+                                    group.chat_id,
+                                    template.media_file_id,
+                                    { 
+                                        caption: template.content,
+                                        reply_markup: replyMarkup
+                                    }
+                                );
+                                return photoMsg.message_id;
+                            case 'voice':
+                                const voiceMsg = await this.bot!.telegram.sendVoice(
+                                    group.chat_id,
+                                    template.media_file_id,
+                                    { 
+                                        caption: template.content,
+                                        reply_markup: replyMarkup
+                                    }
+                                );
+                                return voiceMsg.message_id;
+                            case 'video':
+                                const videoMsg = await this.bot!.telegram.sendVideo(
+                                    group.chat_id,
+                                    template.media_file_id,
+                                    { 
+                                        caption: template.content,
+                                        reply_markup: replyMarkup
+                                    }
+                                );
+                                return videoMsg.message_id;
+                            case 'document':
+                                const docMsg = await this.bot!.telegram.sendDocument(
+                                    group.chat_id,
+                                    template.media_file_id,
+                                    { 
+                                        caption: template.content,
+                                        reply_markup: replyMarkup
+                                    }
+                                );
+                                return docMsg.message_id;
+                            default:
+                                const textMsg = await this.bot!.telegram.sendMessage(
+                                    group.chat_id,
+                                    template.content,
+                                    { reply_markup: replyMarkup }
+                                );
+                                return textMsg.message_id;
+                        }
+                    } else {
+                        const textMsg = await this.bot!.telegram.sendMessage(
+                            group.chat_id,
+                            template.content,
+                            { reply_markup: replyMarkup }
+                        );
+                        return textMsg.message_id;
                     }
-                } else {
-                    const textMsg = await this.bot.telegram.sendMessage(
-                        group.chat_id,
-                        template.content,
-                        { reply_markup: replyMarkup }
-                    );
-                    messageId = textMsg.message_id;
-                }
+                };
+
+                // 使用重试机制执行发送操作
+                messageId = await TelegramRetryHandler.executeWithRetry(
+                    sendOperation,
+                    `broadcast to group ${group.chat_id}`,
+                    {
+                        maxRetries: 2, // 广播重试次数较少，避免延迟过长
+                        baseDelay: 1000,
+                        maxDelay: 5000,
+                        timeoutMs: 20000
+                    }
+                );
 
                 // 记录成功日志
                 await this.logBroadcast(templateId, group.chat_id, messageId, 'sent');
@@ -476,7 +493,10 @@ export class BroadcastService {
             // 获取机器人信息，用于构建私聊链接
             let botUsername = '';
             try {
-                const botInfo = await this.bot.telegram.getMe();
+                const botInfo = await TelegramRetryHandler.executeWithRetry(
+                    () => this.bot!.telegram.getMe(),
+                    'getMe for broadcast username'
+                );
                 botUsername = botInfo.username || '';
             } catch (error) {
                 logger.error('获取机器人信息失败:', error);
@@ -493,42 +513,53 @@ export class BroadcastService {
                 ]]
             } : undefined;
 
-            if (mediaType && mediaFileId) {
-                switch (mediaType) {
-                    case 'photo':
-                        await this.bot.telegram.sendPhoto(chatId, mediaFileId, { 
-                            caption: content,
-                            reply_markup: replyMarkup
-                        });
-                        break;
-                    case 'voice':
-                        await this.bot.telegram.sendVoice(chatId, mediaFileId, { 
-                            caption: content,
-                            reply_markup: replyMarkup
-                        });
-                        break;
-                    case 'video':
-                        await this.bot.telegram.sendVideo(chatId, mediaFileId, { 
-                            caption: content,
-                            reply_markup: replyMarkup
-                        });
-                        break;
-                    case 'document':
-                        await this.bot.telegram.sendDocument(chatId, mediaFileId, { 
-                            caption: content,
-                            reply_markup: replyMarkup
-                        });
-                        break;
-                    default:
-                        await this.bot.telegram.sendMessage(chatId, content, { 
-                            reply_markup: replyMarkup 
-                        });
+            // 使用重试机制发送消息
+            const sendOperation = async () => {
+                if (mediaType && mediaFileId) {
+                    switch (mediaType) {
+                        case 'photo':
+                            return await this.bot!.telegram.sendPhoto(chatId, mediaFileId, { 
+                                caption: content,
+                                reply_markup: replyMarkup
+                            });
+                        case 'voice':
+                            return await this.bot!.telegram.sendVoice(chatId, mediaFileId, { 
+                                caption: content,
+                                reply_markup: replyMarkup
+                            });
+                        case 'video':
+                            return await this.bot!.telegram.sendVideo(chatId, mediaFileId, { 
+                                caption: content,
+                                reply_markup: replyMarkup
+                            });
+                        case 'document':
+                            return await this.bot!.telegram.sendDocument(chatId, mediaFileId, { 
+                                caption: content,
+                                reply_markup: replyMarkup
+                            });
+                        default:
+                            return await this.bot!.telegram.sendMessage(chatId, content, { 
+                                reply_markup: replyMarkup 
+                            });
+                    }
+                } else {
+                    return await this.bot!.telegram.sendMessage(chatId, content, { 
+                        reply_markup: replyMarkup 
+                    });
                 }
-            } else {
-                await this.bot.telegram.sendMessage(chatId, content, { 
-                    reply_markup: replyMarkup 
-                });
-            }
+            };
+
+            // 使用重试机制执行发送
+            await TelegramRetryHandler.executeWithRetry(
+                sendOperation,
+                `sendBroadcastToGroup ${chatId}`,
+                {
+                    maxRetries: 3,
+                    baseDelay: 1000,
+                    maxDelay: 8000,
+                    timeoutMs: 30000
+                }
+            );
 
             return true;
         } catch (error) {

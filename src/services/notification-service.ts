@@ -1,6 +1,7 @@
 import { Telegraf } from 'telegraf';
 import { UserService } from './user-service';
 import { logger } from '../utils/logger';
+import { TelegramRetryHandler } from '../utils/telegram-retry';
 
 class NotificationService {
     private static bot: Telegraf | null = null;
@@ -11,89 +12,74 @@ class NotificationService {
         logger.info('✅ 通知服务已连接bot实例');
     }
 
-    // 发送文本消息
+    // 发送文本消息 - 添加重试机制
     static async sendMessage(userId: number, message: string, options: any = {}) {
         if (!this.bot) {
             logger.error('Bot实例未设置，无法发送通知');
             return false;
         }
 
-        try {
-            await this.bot.telegram.sendMessage(userId, message, options);
-            logger.info(`通知发送成功: 用户${userId}`);
-            return true;
-        } catch (error) {
-            logger.error(`发送通知失败: 用户${userId}`, error);
-            return false;
-        }
+        return await TelegramRetryHandler.sendMessageWithRetry(
+            () => this.bot!.telegram.sendMessage(userId, message, options),
+            userId,
+            'sendMessage'
+        );
     }
 
-    // 发送图片消息
+    // 发送图片消息 - 添加重试机制
     static async sendPhoto(userId: number, photo: string, caption?: string, options: any = {}) {
         if (!this.bot) {
             logger.error('Bot实例未设置，无法发送通知');
             return false;
         }
 
-        try {
-            await this.bot.telegram.sendPhoto(userId, photo, { caption, ...options });
-            logger.info(`图片通知发送成功: 用户${userId}`);
-            return true;
-        } catch (error) {
-            logger.error(`发送图片通知失败: 用户${userId}`, error);
-            return false;
-        }
+        return await TelegramRetryHandler.sendMessageWithRetry(
+            () => this.bot!.telegram.sendPhoto(userId, photo, { caption, ...options }),
+            userId,
+            'sendPhoto'
+        );
     }
 
-    // 发送语音消息
+    // 发送语音消息 - 添加重试机制
     static async sendVoice(userId: number, voice: string, options: any = {}) {
         if (!this.bot) {
             logger.error('Bot实例未设置，无法发送通知');
             return false;
         }
 
-        try {
-            await this.bot.telegram.sendVoice(userId, voice, options);
-            logger.info(`语音通知发送成功: 用户${userId}`);
-            return true;
-        } catch (error) {
-            logger.error(`发送语音通知失败: 用户${userId}`, error);
-            return false;
-        }
+        return await TelegramRetryHandler.sendMessageWithRetry(
+            () => this.bot!.telegram.sendVoice(userId, voice, options),
+            userId,
+            'sendVoice'
+        );
     }
 
-    // 发送视频消息
+    // 发送视频消息 - 添加重试机制
     static async sendVideo(userId: number, video: string, caption?: string, options: any = {}) {
         if (!this.bot) {
             logger.error('Bot实例未设置，无法发送通知');
             return false;
         }
 
-        try {
-            await this.bot.telegram.sendVideo(userId, video, { caption, ...options });
-            logger.info(`视频通知发送成功: 用户${userId}`);
-            return true;
-        } catch (error) {
-            logger.error(`发送视频通知失败: 用户${userId}`, error);
-            return false;
-        }
+        return await TelegramRetryHandler.sendMessageWithRetry(
+            () => this.bot!.telegram.sendVideo(userId, video, { caption, ...options }),
+            userId,
+            'sendVideo'
+        );
     }
 
-    // 发送文档消息
+    // 发送文档消息 - 添加重试机制
     static async sendDocument(userId: number, document: string, caption?: string, options: any = {}) {
         if (!this.bot) {
             logger.error('Bot实例未设置，无法发送通知');
             return false;
         }
 
-        try {
-            await this.bot.telegram.sendDocument(userId, document, { caption, ...options });
-            logger.info(`文档通知发送成功: 用户${userId}`);
-            return true;
-        } catch (error) {
-            logger.error(`发送文档通知失败: 用户${userId}`, error);
-            return false;
-        }
+        return await TelegramRetryHandler.sendMessageWithRetry(
+            () => this.bot!.telegram.sendDocument(userId, document, { caption, ...options }),
+            userId,
+            'sendDocument'
+        );
     }
 
     // 发送漂流瓶回复通知
