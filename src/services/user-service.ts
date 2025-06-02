@@ -33,31 +33,31 @@ export class UserService {
     }): Promise<UserInfo | null> {
         try {
             let userInfo = await dbGet(`
-                SELECT * FROM user_info WHERE user_id = ?
+                SELECT * FROM user_profiles WHERE user_id = ?
             `, [userId]) as UserInfo | null;
 
             if (!userInfo && telegramUser) {
                 // 创建新用户信息记录
                 const displayName = this.generateDisplayName(telegramUser);
+                const currentTime = getCurrentTimestamp();
                 await dbRun(`
-                    INSERT INTO user_info (user_id, username, first_name, last_name, display_name)
-                    VALUES (?, ?, ?, ?, ?)
-                `, [userId, telegramUser.username, telegramUser.first_name, telegramUser.last_name, displayName]);
+                    INSERT INTO user_profiles (user_id, username, first_name, last_name, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                `, [userId, telegramUser.username, telegramUser.first_name, telegramUser.last_name, currentTime, currentTime]);
 
                 userInfo = await dbGet(`
-                    SELECT * FROM user_info WHERE user_id = ?
+                    SELECT * FROM user_profiles WHERE user_id = ?
                 `, [userId]) as UserInfo;
             } else if (userInfo && telegramUser) {
                 // 更新现有用户信息
-                const displayName = this.generateDisplayName(telegramUser);
                 const currentTime = getCurrentTimestamp();
                 await dbRun(`
-                    UPDATE user_info 
-                    SET username = ?, first_name = ?, last_name = ?, display_name = ?, updated_at = ?
+                    UPDATE user_profiles 
+                    SET username = ?, first_name = ?, last_name = ?, updated_at = ?
                     WHERE user_id = ?
-                `, [telegramUser.username, telegramUser.first_name, telegramUser.last_name, displayName, currentTime, userId]);
+                `, [telegramUser.username, telegramUser.first_name, telegramUser.last_name, currentTime, userId]);
 
-                userInfo = { ...userInfo, ...telegramUser, display_name: displayName };
+                userInfo = { ...userInfo, ...telegramUser };
             }
 
             return userInfo;
@@ -89,11 +89,18 @@ export class UserService {
         try {
             const userInfo = await this.getUserInfo(userId);
             
-            if (userInfo && userInfo.display_name) {
-                return userInfo.display_name;
+            // 优先级1: 来自user_profiles的真实姓名
+            if (userInfo) {
+                if (userInfo.first_name && userInfo.last_name) {
+                    return `${userInfo.first_name} ${userInfo.last_name}`;
+                } else if (userInfo.first_name) {
+                    return userInfo.first_name;
+                } else if (userInfo.username) {
+                    return `@${userInfo.username}`;
+                }
             }
             
-            // 从user_points表中获取username作为备选
+            // 优先级2: 从user_points表中获取username作为备选
             const userPoints = await dbGet(`
                 SELECT username FROM user_points WHERE user_id = ?
             `, [userId]) as { username?: string } | null;
@@ -102,13 +109,22 @@ export class UserService {
                 return `@${userPoints.username}`;
             }
             
-            // 生成用户ID后四位作为最后备选
-            const userIdSuffix = String(userId).slice(-4);
-            return `用户${userIdSuffix}`;
+            // 优先级3: 生成友好的匿名昵称（与排行榜逻辑保持一致）
+            const suffixNum = parseInt(String(userId).slice(-4));
+            const adjectives = ['神秘', '匿名', '隐身', '未知', '潜水', '低调'];
+            const nouns = ['船员', '水手', '探险家', '旅行者', '漂流者', '冒险者'];
+            const adj = adjectives[suffixNum % adjectives.length];
+            const noun = nouns[Math.floor(suffixNum / 1000) % nouns.length];
+            return `${adj}${noun}${String(userId).slice(-2)}`;
         } catch (error) {
             logger.error('获取用户显示名称失败:', error);
-            const userIdSuffix = String(userId).slice(-4);
-            return `用户${userIdSuffix}`;
+            // 错误情况下也生成友好昵称
+            const suffixNum = parseInt(String(userId).slice(-4));
+            const adjectives = ['神秘', '匿名', '隐身', '未知', '潜水', '低调'];
+            const nouns = ['船员', '水手', '探险家', '旅行者', '漂流者', '冒险者'];
+            const adj = adjectives[suffixNum % adjectives.length];
+            const noun = nouns[Math.floor(suffixNum / 1000) % nouns.length];
+            return `${adj}${noun}${String(userId).slice(-2)}`;
         }
     }
 
@@ -135,13 +151,12 @@ export class UserService {
         last_name?: string;
     }): Promise<boolean> {
         try {
-            const displayName = this.generateDisplayName(telegramUser);
             const currentTime = getCurrentTimestamp();
             
             await dbRun(`
-                INSERT OR REPLACE INTO user_info (user_id, username, first_name, last_name, display_name, updated_at)
+                INSERT OR REPLACE INTO user_profiles (user_id, username, first_name, last_name, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?)
-            `, [userId, telegramUser.username, telegramUser.first_name, telegramUser.last_name, displayName, currentTime]);
+            `, [userId, telegramUser.username, telegramUser.first_name, telegramUser.last_name, currentTime, currentTime]);
             
             return true;
         } catch (error) {

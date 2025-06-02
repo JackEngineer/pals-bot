@@ -429,19 +429,30 @@ export class BottleService {
 
     // 获取全局统计（增强版）
     static async getGlobalStats() {
-        const [bottles, activeBottles, replies, users, totalPoints, topUser] = await Promise.all([
+        const [bottles, activeBottles, replies, users, totalPoints, topUserData] = await Promise.all([
             dbGet(`SELECT COUNT(*) as count FROM bottles`) as Promise<{ count: number }>,
             dbGet(`SELECT COUNT(*) as count FROM bottles WHERE is_active = 1`) as Promise<{ count: number }>,
             dbGet(`SELECT COUNT(*) as count FROM replies`) as Promise<{ count: number }>,
             dbGet(`SELECT COUNT(*) as count FROM user_stats`) as Promise<{ count: number }>,
             dbGet(`SELECT SUM(total_points) as total FROM user_points`) as Promise<{ total: number }>,
             dbGet(`
-                SELECT username, total_points, level_name 
+                SELECT user_id, username, total_points, level_name 
                 FROM user_points 
                 ORDER BY total_points DESC 
                 LIMIT 1
-            `) as Promise<{ username: string; total_points: number; level_name: string } | null>
+            `) as Promise<{ user_id: number; username: string; total_points: number; level_name: string } | null>
         ]);
+
+        let topUser = null;
+        if (topUserData) {
+            // 使用UserService获取友好的显示名称
+            const displayName = await (await import('./user-service')).UserService.getUserDisplayName(topUserData.user_id);
+            topUser = {
+                username: displayName,
+                points: topUserData.total_points,
+                level: topUserData.level_name
+            };
+        }
 
         return {
             totalBottles: bottles.count,
@@ -449,11 +460,7 @@ export class BottleService {
             totalReplies: replies.count,
             totalUsers: users.count,
             totalPoints: totalPoints.total || 0,
-            topUser: topUser ? {
-                username: topUser.username || '匿名用户',
-                points: topUser.total_points,
-                level: topUser.level_name
-            } : null
+            topUser
         };
     }
 

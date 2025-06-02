@@ -3,6 +3,7 @@ import { PointsService } from '../services/points-service';
 import { BottleService } from '../services/bottle-service';
 import { logger } from '../utils/logger';
 import { ExtendedContext } from './command-state';
+import { formatLeaderboard } from '../utils/message-formatter';
 
 export function setupPointsCommands(bot: Telegraf<ExtendedContext>) {
     // 积分查询命令
@@ -202,17 +203,7 @@ export function setupPointsCommands(bot: Telegraf<ExtendedContext>) {
                 return;
             }
 
-            let message = `🏆 积分排行榜 (Top 10)\n\n`;
-            
-            leaderboard.forEach((user, index) => {
-                const rank = index + 1;
-                const medal = rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : `${rank}.`;
-                const displayName = user.username || `用户${String(user.user_id).slice(-4)}`;
-                const vipMark = user.vip_expires_at && new Date(user.vip_expires_at) > new Date() ? '💎' : '';
-                message += `${medal} ${displayName}${vipMark}\n`;
-                message += `   ${user.level_name} | ${user.total_points}积分\n\n`;
-            });
-
+            const message = formatLeaderboard(leaderboard);
             await ctx.reply(message);
 
         } catch (error) {

@@ -64,6 +64,9 @@ export interface IAdminLog {
 export interface IUserPoints {
     user_id: number;
     username?: string;
+    first_name?: string;
+    last_name?: string;
+    profile_username?: string;
     total_points: number;
     available_points: number;
     level: number;

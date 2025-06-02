@@ -538,8 +538,14 @@ export class PointsService {
     // 积分排行榜
     static async getLeaderboard(limit: number = 10): Promise<IUserPoints[]> {
         return await dbAll(`
-            SELECT * FROM user_points 
-            ORDER BY total_points DESC 
+            SELECT 
+                up.*,
+                upr.first_name,
+                upr.last_name,
+                upr.username as profile_username
+            FROM user_points up
+            LEFT JOIN user_profiles upr ON up.user_id = upr.user_id
+            ORDER BY up.total_points DESC 
             LIMIT ?
         `, [limit]) as IUserPoints[];
     }

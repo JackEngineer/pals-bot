@@ -273,16 +273,60 @@ export function formatShopItems(items: any[], userPoints: number, userLevel: str
 }
 
 export function formatLeaderboard(leaderboard: any[]): string {
-    let message = `🏆 积分排行榜 (Top 10)\n\n`;
+    let message = `🏆 积分排行榜 TOP 10\n`;
+    message += `═══════════════════════\n\n`;
     
     leaderboard.forEach((user, index) => {
         const rank = index + 1;
-        const medal = rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : `${rank}.`;
-        const displayName = user.username ? `@${user.username}` : `用户${String(user.user_id).slice(-4)}`;
-        const vipMark = user.vip_expires_at && new Date(user.vip_expires_at) > new Date() ? '💎' : '';
-        message += `${medal} ${displayName}${vipMark}\n`;
-        message += `   ${user.level_name} | ${user.total_points}积分\n\n`;
+        
+        // 排名图标
+        let rankIcon = '';
+        if (rank === 1) rankIcon = '🥇';
+        else if (rank === 2) rankIcon = '🥈';
+        else if (rank === 3) rankIcon = '🥉';
+        else rankIcon = `${rank}.`;
+        
+        // 优化用户显示名称逻辑
+        let displayName = '';
+        
+        // 优先级1: 来自user_profiles的真实姓名
+        if (user.first_name && user.last_name) {
+            displayName = `${user.first_name} ${user.last_name}`;
+        } else if (user.first_name) {
+            displayName = user.first_name;
+        }
+        // 优先级2: 来自user_profiles的用户名  
+        else if (user.profile_username) {
+            displayName = `@${user.profile_username}`;
+        }
+        // 优先级3: 来自user_points的用户名（收集时的用户名）
+        else if (user.username) {
+            displayName = `@${user.username}`;
+        }
+        // 优先级4: 生成匿名昵称（基于用户ID）
+        else {
+            // 生成更友好的匿名昵称，而不是简单的"用户XXXX"
+            const userId = user.user_id;
+            const suffixNum = parseInt(String(userId).slice(-4));
+            const adjectives = ['神秘', '匿名', '隐身', '未知', '潜水', '低调'];
+            const nouns = ['船员', '水手', '探险家', '旅行者', '漂流者', '冒险者'];
+            const adj = adjectives[suffixNum % adjectives.length];
+            const noun = nouns[Math.floor(suffixNum / 1000) % nouns.length];
+            displayName = `${adj}${noun}${String(userId).slice(-2)}`;
+        }
+        
+        // VIP标识
+        const vipMark = user.vip_expires_at && new Date(user.vip_expires_at) > new Date() ? ' 💎' : '';
+        
+        // 等级图标
+        const levelIcon = user.level_name.split(' ')[0]; // 提取emoji
+        
+        message += `${rankIcon} ${displayName}${vipMark}\n`;
+        message += `    ${levelIcon} ${user.level_name} · ${user.total_points.toLocaleString()} 积分\n\n`;
     });
+
+    message += `═══════════════════════\n`;
+    message += `💡 使用 /points 查看你的积分详情`;
 
     return message;
 }
