@@ -184,8 +184,8 @@ export class MonitorService {
       const userStats = await dbGet(`
         SELECT 
           COUNT(*) as total,
-          COUNT(CASE WHEN last_active_at > datetime('now', '-1 hour') THEN 1 END) as active
-        FROM users
+          COUNT(CASE WHEN updated_at > datetime('now', '-1 hour') THEN 1 END) as active
+        FROM user_profiles
       `);
       
       totalUsers = userStats?.total || 0;

@@ -1,0 +1,1 @@
+import{d as s,c as t,a as o,o as a,_ as n}from"./main-ChR5rvRr.js";const r={class:"profile-page"},_=s({__name:"Profile",setup(l){return(p,e)=>(a(),t("div",r,e[0]||(e[0]=[o("h2",null,"👤 个人中心",-1),o("p",null,"这里是个人中心页面，功能开发中...",-1)])))}}),f=n(_,[["__scopeId","data-v-87f28141"]]);export{f as default};

@@ -406,20 +406,29 @@ export class BottleService {
 
     // 获取用户统计（增强版，包含积分信息）
     static async getUserStats(userId: number) {
-        const [stats, thrownBottles, pickedBottles, userPoints, achievements] = await Promise.all([
+        const [stats, thrownBottles, pickedBottles, userPoints, achievements, repliedCount] = await Promise.all([
             dbGet(`SELECT * FROM user_stats WHERE user_id = ?`, [userId]) as Promise<UserStats | null>,
             this.getUserBottles(userId, 5),
             this.getPickedBottles(userId, 5),
             PointsService.getUserPoints(userId),
-            PointsService.getUserAchievements(userId)
+            PointsService.getUserAchievements(userId),
+            // 获取用户回复的瓶子数量
+            dbGet(`SELECT COUNT(*) as count FROM replies WHERE sender_id = ?`, [userId]) as Promise<{ count: number }>
         ]);
 
+        // 构造完整的统计数据，确保字段匹配前端期望
+        const completeStats = {
+            user_id: userId,
+            bottles_thrown: stats?.bottles_thrown || 0,
+            bottles_picked: stats?.bottles_picked || 0,
+            bottles_replied: repliedCount?.count || 0,  // 新增：回复的瓶子数量
+            points_earned: userPoints?.total_points || 0,  // 新增：获得的总积分
+            last_throw_time: stats?.last_throw_time,
+            last_pick_time: stats?.last_pick_time
+        };
+
         return {
-            stats: stats || {
-                user_id: userId,
-                bottles_thrown: 0,
-                bottles_picked: 0
-            },
+            stats: completeStats,
             recentThrown: thrownBottles,
             recentPicked: pickedBottles,
             points: userPoints,

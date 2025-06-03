@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>漂流瓶 Mini App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--tg-theme-hint-color, #ccc);
+            border-top: 3px solid var(--tg-theme-button-color, #007bff);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .app-container {
+            max-width: 100%;
+            min-height: 100vh;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+        }
+        
+        .header {
+            background-color: var(--tg-theme-secondary-bg-color, #f8f9fa);
+            padding: 1rem;
+            border-bottom: 1px solid var(--tg-theme-section-separator-color, #e0e0e0);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: var(--tg-theme-button-color, #007bff);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 0.8rem;
+        }
+        
+        .points-display {
+            background-color: var(--tg-theme-button-color, #007bff);
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        
+        .main-content {
+            padding: 1rem;
+            padding-bottom: 80px;
+        }
+        
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: var(--tg-theme-secondary-bg-color, #f8f9fa);
+            border-top: 1px solid var(--tg-theme-section-separator-color, #e0e0e0);
+            display: flex;
+            justify-content: space-around;
+            padding: 0.8rem 0;
+            z-index: 100;
+        }
+        
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.3rem;
+            font-size: 0.7rem;
+            color: var(--tg-theme-hint-color, #666);
+            text-decoration: none;
+            min-width: 60px;
+            transition: color 0.2s;
+        }
+        
+        .nav-item.active {
+            color: var(--tg-theme-button-color, #007bff);
+        }
+        
+        .nav-icon {
+            font-size: 1.2rem;
+        }
+        
+        .error-container {
+            text-align: center;
+            padding: 2rem;
+            color: var(--tg-theme-destructive-text-color, #dc3545);
+        }
+        
+        .btn {
+            background-color: var(--tg-theme-button-color, #007bff);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+        
+        .btn:hover {
+            opacity: 0.8;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background-color: var(--tg-theme-secondary-bg-color, #6c757d);
+        }
+        
+        .card {
+            background-color: var(--tg-theme-secondary-bg-color, #ffffff);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border: 1px solid var(--tg-theme-section-separator-color, #e0e0e0);
+        }
+        
+        .page {
+            display: none;
+        }
+        
+        .page.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="loading">
+            <div class="loading-spinner"></div>
+            <div>正在加载漂流瓶应用...</div>
+        </div>
+    </div>
+
+    <script>
+        // Telegram Web App 初始化
+        window.Telegram.WebApp.ready();
+        window.Telegram.WebApp.expand();
+        
+        // 应用状态
+        const appState = {
+            user: null,
+            userStats: null,
+            userPoints: null,
+            currentPage: 'home',
+            bottles: [],
+            loading: false
+        };
+        
+        // API 基础URL
+        const API_BASE = window.location.origin + '/api/miniapp';
+        
+        // 获取初始化数据
+        const initData = window.Telegram.WebApp.initData;
+        
+        // API 请求封装
+        async function apiRequest(endpoint, options = {}) {
+            const url = API_BASE + endpoint;
+            const config = {
+                method: 'GET', // 默认方法设为GET
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                },
+                ...options
+            };
+            
+            // 只有非GET请求才添加body
+            if (config.method !== 'GET' && config.method !== 'HEAD') {
+                if (!config.body) {
+                    config.body = JSON.stringify({ initData });
+                } else if (config.body && typeof config.body === 'object') {
+                    config.body = JSON.stringify({ ...config.body, initData });
+                }
+            }
+            // GET和HEAD请求通过URL参数传递initData
+            else if (initData) {
+                const urlObj = new URL(url);
+                urlObj.searchParams.append('initData', initData);
+                const response = await fetch(urlObj.toString(), config);
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error || '请求失败');
+                }
+                
+                return data.data;
+            }
+            
+            const response = await fetch(url, config);
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || '请求失败');
+            }
+            
+            return data.data;
+        }
+        
+        // 初始化应用
+        async function initApp() {
+            try {
+                console.log('正在初始化应用...');
+                
+                // 获取用户信息
+                const userData = await apiRequest('/user/profile');
+                appState.user = userData.user;
+                appState.userStats = userData.stats;
+                appState.userPoints = userData.points;
+                
+                // 渲染应用界面
+                renderApp();
+                
+                console.log('应用初始化完成');
+                
+            } catch (error) {
+                console.error('应用初始化失败:', error);
+                renderError(error.message);
+            }
+        }
+        
+        // 渲染错误页面
+        function renderError(message) {
+            document.getElementById('app').innerHTML = `
+                <div class="error-container">
+                    <h2>😔 加载失败</h2>
+                    <p>${message}</p>
+                    <button class="btn" onclick="initApp()">重试</button>
+                </div>
+            `;
+        }
+        
+        // 渲染应用主界面
+        function renderApp() {
+            const { user, userPoints } = appState;
+            
+            const userInitial = user.first_name ? user.first_name[0].toUpperCase() : '?';
+            const userName = user.first_name || user.username || '用户';
+            
+            document.getElementById('app').innerHTML = `
+                <div class="app-container">
+                    <header class="header">
+                        <div class="header-content">
+                            <div class="user-info">
+                                <div class="user-avatar">${userInitial}</div>
+                                <span>${userName}</span>
+                            </div>
+                            <div class="points-display">
+                                💰 ${userPoints?.total_points || 0}
+                            </div>
+                        </div>
+                    </header>
+                    
+                    <main class="main-content">
+                        <div id="home-page" class="page active">
+                            ${renderHomePage()}
+                        </div>
+                        
+                        <div id="bottles-page" class="page">
+                            ${renderBottlesPage()}
+                        </div>
+                        
+                        <div id="shop-page" class="page">
+                            ${renderShopPage()}
+                        </div>
+                        
+                        <div id="profile-page" class="page">
+                            ${renderProfilePage()}
+                        </div>
+                    </main>
+                    
+                    <nav class="bottom-nav">
+                        <a href="#" class="nav-item active" onclick="switchPage('home')">
+                            <span class="nav-icon">🏠</span>
+                            <span>首页</span>
+                        </a>
+                        <a href="#" class="nav-item" onclick="switchPage('bottles')">
+                            <span class="nav-icon">🍾</span>
+                            <span>漂流瓶</span>
+                        </a>
+                        <a href="#" class="nav-item" onclick="switchPage('shop')">
+                            <span class="nav-icon">🛒</span>
+                            <span>商店</span>
+                        </a>
+                        <a href="#" class="nav-item" onclick="switchPage('profile')">
+                            <span class="nav-icon">👤</span>
+                            <span>我的</span>
+                        </a>
+                    </nav>
+                </div>
+            `;
+        }
+        
+        // 渲染首页
+        function renderHomePage() {
+            const { userStats, userPoints } = appState;
+            
+            return `
+                <div class="card">
+                    <h2>🌊 欢迎来到漂流瓶世界</h2>
+                    <p>在这里分享你的心情，发现他人的故事</p>
+                </div>
+                
+                <div class="card">
+                    <h3>📊 我的统计</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: bold; color: var(--tg-theme-button-color, #007bff);">
+                                ${userStats?.bottles_thrown || 0}
+                            </div>
+                            <div style="font-size: 0.9rem; color: var(--tg-theme-hint-color, #666);">投放的瓶子</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: bold; color: var(--tg-theme-button-color, #007bff);">
+                                ${userStats?.bottles_picked || 0}
+                            </div>
+                            <div style="font-size: 0.9rem; color: var(--tg-theme-hint-color, #666);">捡到的瓶子</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>🎮 快速操作</h3>
+                    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                        <button class="btn" onclick="showThrowBottle()">📝 投放漂流瓶</button>
+                        <button class="btn btn-secondary" onclick="pickBottle()">🎣 捡拾漂流瓶</button>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>💰 积分信息</h3>
+                    <div style="margin-top: 1rem;">
+                        <div>总积分: <strong>${userPoints?.total_points || 0}</strong></div>
+                        <div>等级: <strong>${userPoints?.level || 'Lv.1'}</strong></div>
+                        <div style="margin-top: 0.5rem;">
+                            <button class="btn" onclick="checkin()">📅 每日签到</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 渲染漂流瓶页面
+        function renderBottlesPage() {
+            return `
+                <div class="card">
+                    <h2>🍾 我的漂流瓶</h2>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+                        <button class="btn" onclick="loadBottles('thrown')">我投放的</button>
+                        <button class="btn btn-secondary" onclick="loadBottles('picked')">我捡到的</button>
+                    </div>
+                </div>
+                
+                <div id="bottles-list">
+                    <div style="text-align: center; padding: 2rem; color: var(--tg-theme-hint-color, #666);">
+                        点击上方按钮查看漂流瓶
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 渲染商店页面
+        function renderShopPage() {
+            return `
+                <div class="card">
+                    <h2>🛒 积分商店</h2>
+                    <p>使用积分购买特殊功能和道具</p>
+                </div>
+                
+                <div id="shop-items">
+                    <div style="text-align: center; padding: 2rem; color: var(--tg-theme-hint-color, #666);">
+                        正在加载商品...
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 渲染个人页面
+        function renderProfilePage() {
+            const { user, userStats, userPoints } = appState;
+            
+            return `
+                <div class="card">
+                    <h2>👤 个人信息</h2>
+                    <div style="margin-top: 1rem;">
+                        <div>用户名: ${user?.first_name || user?.username || '未知'}</div>
+                        <div>用户ID: ${user?.id}</div>
+                        ${user?.username ? `<div>@${user.username}</div>` : ''}
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>📈 详细统计</h3>
+                    <div style="margin-top: 1rem;">
+                        <div>投放漂流瓶: ${userStats?.bottles_thrown || 0} 个</div>
+                        <div>捡拾漂流瓶: ${userStats?.bottles_picked || 0} 个</div>
+                        <div>回复数量: ${userStats?.replies_sent || 0} 条</div>
+                        <div>收到回复: ${userStats?.replies_received || 0} 条</div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>🏆 等级系统</h3>
+                    <div style="margin-top: 1rem;">
+                        <div>当前等级: <strong>${userPoints?.level || 'Lv.1'}</strong></div>
+                        <div>总积分: <strong>${userPoints?.total_points || 0}</strong></div>
+                        <div>今日签到: ${userPoints?.last_checkin ? '已签到' : '未签到'}</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 页面切换
+        function switchPage(pageId) {
+            // 隐藏所有页面
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+            
+            // 显示目标页面
+            document.getElementById(pageId + '-page').classList.add('active');
+            
+            // 更新导航状态
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            event.target.closest('.nav-item').classList.add('active');
+            
+            appState.currentPage = pageId;
+            
+            // 页面特殊处理
+            if (pageId === 'shop') {
+                loadShopItems();
+            }
+        }
+        
+        // 投放漂流瓶
+        async function showThrowBottle() {
+            const content = prompt('请输入漂流瓶内容:');
+            if (!content) return;
+            
+            try {
+                await apiRequest('/bottles/throw', {
+                    method: 'POST',
+                    body: { content }
+                });
+                
+                window.Telegram.WebApp.showAlert('漂流瓶投放成功！');
+                
+                // 刷新用户数据
+                const userData = await apiRequest('/user/profile');
+                appState.userStats = userData.stats;
+                appState.userPoints = userData.points;
+                renderApp();
+                
+            } catch (error) {
+                window.Telegram.WebApp.showAlert('投放失败: ' + error.message);
+            }
+        }
+        
+        // 捡拾漂流瓶
+        async function pickBottle() {
+            try {
+                const bottle = await apiRequest('/bottles/pick', {
+                    method: 'POST'
+                });
+                
+                if (!bottle) {
+                    window.Telegram.WebApp.showAlert('暂时没有新的漂流瓶');
+                    return;
+                }
+                
+                const reply = confirm(`捡到漂流瓶：\n\n${bottle.content}\n\n是否要回复？`);
+                
+                if (reply) {
+                    const replyContent = prompt('请输入回复内容:');
+                    if (replyContent) {
+                        await apiRequest(`/bottles/${bottle.id}/reply`, {
+                            method: 'POST',
+                            body: { content: replyContent }
+                        });
+                        window.Telegram.WebApp.showAlert('回复发送成功！');
+                    }
+                }
+                
+                // 刷新用户数据
+                const userData = await apiRequest('/user/profile');
+                appState.userStats = userData.stats;
+                appState.userPoints = userData.points;
+                renderApp();
+                
+            } catch (error) {
+                window.Telegram.WebApp.showAlert('捡拾失败: ' + error.message);
+            }
+        }
+        
+        // 签到
+        async function checkin() {
+            try {
+                const result = await apiRequest('/checkin', {
+                    method: 'POST'
+                });
+                
+                window.Telegram.WebApp.showAlert(`签到成功！获得 ${result.points_earned} 积分`);
+                
+                // 刷新用户数据
+                const userData = await apiRequest('/user/profile');
+                appState.userPoints = userData.points;
+                renderApp();
+                
+            } catch (error) {
+                window.Telegram.WebApp.showAlert('签到失败: ' + error.message);
+            }
+        }
+        
+        // 加载漂流瓶列表
+        async function loadBottles(type) {
+            try {
+                const bottles = await apiRequest(`/bottles?type=${type}&limit=20`);
+                
+                const bottlesList = document.getElementById('bottles-list');
+                if (bottles.bottles.length === 0) {
+                    bottlesList.innerHTML = `
+                        <div style="text-align: center; padding: 2rem; color: var(--tg-theme-hint-color, #666);">
+                            暂无漂流瓶
+                        </div>
+                    `;
+                    return;
+                }
+                
+                bottlesList.innerHTML = bottles.bottles.map(bottle => `
+                    <div class="card">
+                        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;">
+                            ${new Date(bottle.created_at).toLocaleDateString('zh-CN')}
+                        </div>
+                        <div style="margin-bottom: 0.5rem;">
+                            ${bottle.content}
+                        </div>
+                        <div style="font-size: 0.8rem; color: var(--tg-theme-hint-color, #666);">
+                            被捡拾 ${bottle.picked_count || 0} 次
+                        </div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                window.Telegram.WebApp.showAlert('加载失败: ' + error.message);
+            }
+        }
+        
+        // 加载商店商品
+        async function loadShopItems() {
+            try {
+                const items = await apiRequest('/shop/items');
+                
+                const shopItemsContainer = document.getElementById('shop-items');
+                if (items.length === 0) {
+                    shopItemsContainer.innerHTML = `
+                        <div style="text-align: center; padding: 2rem; color: var(--tg-theme-hint-color, #666);">
+                            暂无商品
+                        </div>
+                    `;
+                    return;
+                }
+                
+                shopItemsContainer.innerHTML = items.map(item => `
+                    <div class="card">
+                        <h4>${item.name}</h4>
+                        <p style="font-size: 0.9rem; color: var(--tg-theme-hint-color, #666); margin: 0.5rem 0;">
+                            ${item.description}
+                        </p>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="font-weight: bold; color: var(--tg-theme-button-color, #007bff);">
+                                💰 ${item.price} 积分
+                            </div>
+                            <button class="btn" onclick="purchaseItem('${item.id}')">
+                                购买
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                console.error('加载商店商品失败:', error);
+            }
+        }
+        
+        // 购买商品
+        async function purchaseItem(itemId) {
+            try {
+                await apiRequest('/shop/purchase', {
+                    method: 'POST',
+                    body: { itemId }
+                });
+                
+                window.Telegram.WebApp.showAlert('购买成功！');
+                
+                // 刷新用户数据和商店
+                const userData = await apiRequest('/user/profile');
+                appState.userPoints = userData.points;
+                renderApp();
+                loadShopItems();
+                
+            } catch (error) {
+                window.Telegram.WebApp.showAlert('购买失败: ' + error.message);
+            }
+        }
+        
+        // 启动应用
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM加载完成，开始初始化应用...');
+            initApp();
+        });
+        
+        // Telegram Web App 主题变化监听
+        window.Telegram.WebApp.onEvent('themeChanged', function() {
+            console.log('主题已更改');
+        });
+        
+        // 关闭确认
+        window.Telegram.WebApp.enableClosingConfirmation();
+    </script>
+</body>
+</html> 

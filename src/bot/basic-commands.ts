@@ -20,6 +20,26 @@ export function setupBasicCommands(bot: Telegraf<ExtendedContext>) {
         // 添加调试日志
         logger.info(`/start命令被调用: 用户${ctx.from?.id}, 聊天类型${ctx.chat.type}, 机器人用户名: ${ctx.botInfo?.username}`);
         
+        // 检查是否启用Web App (只在HTTPS环境下启用)
+        const isWebAppEnabled = process.env.WEBAPP_URL && process.env.WEBAPP_URL.startsWith('https://');
+        
+        const inlineKeyboard: any = [
+            // [
+            //     { text: '📝 投放漂流瓶', callback_data: 'throw' },
+            //     { text: '🎣 捡拾漂流瓶', callback_data: 'pick' }
+            // ],
+            // [
+            //     { text: '💰 我的积分', callback_data: 'points' },
+            //     { text: '📊 我的统计', callback_data: 'stats' }
+            // ],
+            // [{ text: '❓ 帮助', callback_data: 'help' }]
+        ];
+
+        // 只在HTTPS环境下添加Web App按钮
+        if (isWebAppEnabled) {
+            inlineKeyboard.unshift([{ text: '🌐 打开 Mini App', web_app: { url: `${process.env.WEBAPP_URL}/app` } }]);
+        }
+        
         await ctx.reply(
             `🌊 欢迎来到漂流瓶世界！\n\n` +
             `这里你可以:\n` +
@@ -30,8 +50,92 @@ export function setupBasicCommands(bot: Telegraf<ExtendedContext>) {
             `开始你的漂流瓶之旅吧！ 🚀\n\n` +
             `机器人用户名: @${ctx.botInfo?.username || '未知'}\n` +
             `当前聊天类型: ${ctx.chat.type}\n\n` +
-            `使用 /help 查看详细帮助`
+            `使用 /help 查看详细帮助`,
+            {
+                reply_markup: {
+                    inline_keyboard: inlineKeyboard
+                }
+            }
         );
+    });
+
+    // Mini App 启动命令
+    bot.command('app', async (ctx) => {
+        try {
+            const userId = ctx.from?.id;
+            
+            if (!userId) {
+                await ctx.reply('❌ 无法获取用户信息');
+                return;
+            }
+
+            // 检查是否启用Web App
+            const isWebAppEnabled = process.env.WEBAPP_URL && process.env.WEBAPP_URL.startsWith('https://');
+            
+            if (!isWebAppEnabled) {
+                await ctx.reply(
+                    '📱 Mini App 功能暂时不可用\n\n' +
+                    '原因：本地开发环境不支持Web App (需要HTTPS)\n\n' +
+                    '你可以继续使用以下功能：\n' +
+                    '📝 /throw - 投放漂流瓶\n' +
+                    '🎣 /pick - 捡拾漂流瓶\n' +
+                    '💰 /points - 查看积分\n' +
+                    '📊 /stats - 查看统计\n' +
+                    '🛒 /shop - 积分商店\n' +
+                    '🏆 /achievements - 成就系统\n\n' +
+                    '部署到支持HTTPS的服务器后即可使用Web App功能 🚀',
+                    {
+                        reply_markup: {
+                            inline_keyboard: [
+                                [
+                                    { text: '📝 投放漂流瓶', callback_data: 'throw' },
+                                    { text: '🎣 捡拾漂流瓶', callback_data: 'pick' }
+                                ],
+                                [
+                                    { text: '💰 我的积分', callback_data: 'points' },
+                                    { text: '🛒 积分商店', callback_data: 'shop' }
+                                ],
+                                [{ text: '🏠 返回主菜单', callback_data: 'menu' }]
+                            ]
+                        }
+                    }
+                );
+                return;
+            }
+
+            // 确保用户信息存在
+            await UserService.getUserInfo(userId, ctx.from);
+            
+            const webAppUrl = `${process.env.WEBAPP_URL}/app`;
+            
+            await ctx.reply(
+                '🎉 欢迎使用漂流瓶 Mini App！\n\n' +
+                '在这里你可以：\n' +
+                '📱 更便捷地管理漂流瓶\n' +
+                '💰 查看详细的积分和等级信息\n' +
+                '🛒 浏览和购买商店商品\n' +
+                '🏆 查看排行榜和成就\n' +
+                '📊 查看详细的统计数据\n' +
+                '🎮 享受更丰富的交互体验\n\n' +
+                '点击下方按钮开始体验：',
+                {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🌐 打开漂流瓶应用', web_app: { url: webAppUrl } }],
+                            [
+                                { text: '📱 如何使用 Mini App', callback_data: 'help_miniapp' },
+                                { text: '🔧 技术支持', callback_data: 'tech_support' }
+                            ],
+                            [{ text: '🏠 返回主菜单', callback_data: 'menu' }]
+                        ]
+                    }
+                }
+            );
+            
+        } catch (error) {
+            logger.error('启动 Mini App 失败:', error);
+            await ctx.reply('启动应用失败，请稍后重试。如果问题持续存在，请联系管理员。');
+        }
     });
 
     // 帮助命令
@@ -345,4 +449,4 @@ export function setupBasicCommands(bot: Telegraf<ExtendedContext>) {
     });
 
     logger.info('✅ 基础漂流瓶命令设置完成');
-} 
+}

@@ -1,0 +1,1 @@
+import{d as a,c as o,a as t,o as s,_ as l}from"./main-ChR5rvRr.js";const n={class:"bottle-detail-page"},_=a({__name:"BottleDetail",setup(c){return(p,e)=>(s(),o("div",n,e[0]||(e[0]=[t("h2",null,"📋 漂流瓶详情",-1),t("p",null,"这里是漂流瓶详情页面，功能开发中...",-1)])))}}),d=l(_,[["__scopeId","data-v-a8d372a0"]]);export{d as default};

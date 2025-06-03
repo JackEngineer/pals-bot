@@ -1,0 +1,1 @@
+import{d as s,c as o,a as t,o as a,_ as n}from"./main-ChR5rvRr.js";const _={class:"bottles-page"},c=s({__name:"Bottles",setup(l){return(p,e)=>(a(),o("div",_,e[0]||(e[0]=[t("h2",null,"🍾 我的漂流瓶",-1),t("p",null,"这里是漂流瓶页面，功能开发中...",-1)])))}}),d=n(c,[["__scopeId","data-v-ecd46f26"]]);export{d as default};

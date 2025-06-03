@@ -338,14 +338,14 @@ export class CacheInstance<T> {
   /**
    * 使用模式：缓存函数结果
    */
-  wrap<Args extends any[], Return>(
+  wrap<Args extends any[], Return extends T>(
     fn: (...args: Args) => Promise<Return>,
     keyGenerator: (...args: Args) => string,
     ttl?: number
   ): (...args: Args) => Promise<Return> {
     return async (...args: Args): Promise<Return> => {
       const key = keyGenerator(...args);
-      return this.getOrSet(key, () => fn(...args), ttl);
+      return this.getOrSet(key, () => fn(...args), ttl) as Promise<Return>;
     };
   }
 }

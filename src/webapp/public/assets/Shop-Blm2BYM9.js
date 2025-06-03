@@ -1,0 +1,1 @@
+import{d as s,c as t,a as o,o as a,_ as n}from"./main-ChR5rvRr.js";const p={class:"shop-page"},_=s({__name:"Shop",setup(c){return(r,e)=>(a(),t("div",p,e[0]||(e[0]=[o("h2",null,"🛒 积分商店",-1),o("p",null,"这里是积分商店页面，功能开发中...",-1)])))}}),d=n(_,[["__scopeId","data-v-02017125"]]);export{d as default};

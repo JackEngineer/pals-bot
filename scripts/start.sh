@@ -51,7 +51,7 @@ elif [ "$1" = "docker" ]; then
         exit 1
     fi
     docker build -t pals-bot .
-    docker run -d --name pals-bot --env-file .env -p 3000:3000 pals-bot
+    docker run -d --name pals-bot --env-file .env -p 3001:3001 pals-bot
 else
     echo "🎯 生产模式启动..."
     npm start

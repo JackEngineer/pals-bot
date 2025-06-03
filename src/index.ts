@@ -3,6 +3,7 @@ import { Telegraf, Context } from 'telegraf';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import path from 'path';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { setupDatabase } from './services/database';
@@ -18,6 +19,7 @@ import { setupHandlers } from './bot/handlers';
 import { TelegramRetryHandler } from './utils/telegram-retry';
 import { PerformanceMonitor } from './utils/performance-monitor';
 import { CacheManager } from './utils/cache-manager';
+import miniAppRoutes from './api/routes/mini-app';
 
 // 加载环境变量
 dotenv.config();
@@ -83,9 +85,69 @@ class PalsBot {
     }
 
     private setupExpress() {
-        this.app.use(helmet());
-        this.app.use(cors());
+        // 设置安全标头，为Mini App优化
+        this.app.use(helmet({
+            contentSecurityPolicy: {
+                directives: {
+                    defaultSrc: ["'self'"],
+                    scriptSrc: ["'self'", "'unsafe-inline'", "https://telegram.org"],
+                    styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+                    fontSrc: ["'self'", "https://fonts.gstatic.com"],
+                    imgSrc: ["'self'", "data:", "https:", "blob:"],
+                    connectSrc: ["'self'", "https://api.telegram.org"],
+                    frameSrc: ["'none'"],
+                    objectSrc: ["'none'"],
+                    mediaSrc: ["'self'", "data:", "blob:"]
+                }
+            },
+            xFrameOptions: { action: 'sameorigin' }
+        }));
+
+        // CORS配置，支持Telegram Web App
+        this.app.use(cors({
+            origin: [
+                'https://telegram.org',
+                'https://web.telegram.org',
+                'https://tg.dev',
+                // 开发环境支持
+                ...(process.env.NODE_ENV === 'development' ? ['http://localhost:5173', 'http://127.0.0.1:5173'] : [])
+            ],
+            credentials: true,
+            methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+            allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+        }));
+
         this.app.use(express.json());
+        this.app.use(express.urlencoded({ extended: true }));
+
+        // 静态文件服务 - Mini App 前端
+        const webappPath = path.join(__dirname, 'webapp/dist');
+        this.app.use('/webapp', express.static(webappPath, {
+            maxAge: process.env.NODE_ENV === 'production' ? '1d' : '0',
+            setHeaders: (res, filePath) => {
+                // 为HTML文件设置不缓存
+                if (filePath.endsWith('.html')) {
+                    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+                }
+            }
+        }));
+
+        // Mini App API 路由
+        this.app.use('/api/miniapp', miniAppRoutes);
+
+        // Mini App 主页面路由
+        this.app.get(['/app', '/app/*'], (req, res) => {
+            const indexPath = path.join(webappPath, 'index.html');
+            res.sendFile(indexPath, (err) => {
+                if (err) {
+                    logger.error('发送Mini App页面失败:', err);
+                    res.status(404).json({
+                        success: false,
+                        error: 'Mini App not found'
+                    });
+                }
+            });
+        });
 
         // 健康检查端点 - 增强版
         this.app.get('/health', async (req, res) => {
@@ -103,7 +165,8 @@ class PalsBot {
                     cpu: healthMetrics.cpuUsage,
                     errorRate: healthMetrics.errorRate,
                     avgResponseTime: healthMetrics.avgResponseTime,
-                    version: process.env.npm_package_version || 'unknown'
+                    version: process.env.npm_package_version || 'unknown',
+                    miniapp_enabled: true
                 };
 
                 // 根据健康状态返回适当的HTTP状态码
@@ -354,7 +417,7 @@ class PalsBot {
             logger.info('定时任务启动完成');
 
             // 启动Express服务器
-            const port = process.env.PORT || 3000;
+            const port = process.env.PORT || 3001;
             this.app.listen(port, () => {
                 logger.info(`HTTP服务器启动在端口 ${port}`);
             });

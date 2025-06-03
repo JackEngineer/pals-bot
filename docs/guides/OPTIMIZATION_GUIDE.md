@@ -181,7 +181,7 @@ ADMIN_IDS=123456789,987654321
 ```bash
 # 基础配置
 BOT_TOKEN=your_bot_token
-PORT=3000
+PORT=3001
 
 # 代理配置（如需要）
 PROXY_URL=socks5://127.0.0.1:1080
@@ -231,16 +231,16 @@ npm start
 ### 监控系统状态
 ```bash
 # 检查健康状态
-curl http://localhost:3000/health
+curl http://localhost:3001/health
 
 # 查看性能指标
-curl http://localhost:3000/metrics
+curl http://localhost:3001/metrics
 
 # 查看缓存状态
-curl http://localhost:3000/cache
+curl http://localhost:3001/cache
 
 # 查看系统状态
-curl http://localhost:3000/system
+curl http://localhost:3001/system
 ```
 
 ### 查看日志

@@ -9,11 +9,13 @@ module.exports = {
       max_memory_restart: '1G',
       env: {
         NODE_ENV: 'production',
-        PORT: 3001
+        PORT: 3001,
+        WEBAPP_URL: 'https://4621-183-94-71-108.ngrok-free.app'
       },
       env_production: {
         NODE_ENV: 'production',
-        PORT: 3001
+        PORT: 3001,
+        WEBAPP_URL: 'https://4621-183-94-71-108.ngrok-free.app'
       },
       error_file: './logs/err.log',
       out_file: './logs/out.log',
