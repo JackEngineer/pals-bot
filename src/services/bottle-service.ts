@@ -270,13 +270,6 @@ export class BottleService {
                     WHERE id = ?
                 `, [bottleId]);
 
-                // 减少用户的捡拾统计（因为丢弃了）
-                await dbRun(`
-                    UPDATE user_stats 
-                    SET bottles_picked = bottles_picked - 1
-                    WHERE user_id = ?
-                `, [userId]);
-
                 return true;
             });
         } catch (error) {
@@ -302,6 +295,9 @@ export class BottleService {
                 INSERT INTO replies (id, bottle_id, sender_id, sender_username, content, media_type, media_file_id, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `, [replyId, data.bottleId, data.senderId, data.senderUsername, data.content, data.mediaType, data.mediaFileId, currentTime]);
+
+            // 更新用户统计 - 新增回复统计逻辑
+            await this.updateUserStatsForReply(data.senderId, data.senderUsername);
 
             // 添加回复者积分
             await PointsService.addPoints(
@@ -406,14 +402,12 @@ export class BottleService {
 
     // 获取用户统计（增强版，包含积分信息）
     static async getUserStats(userId: number) {
-        const [stats, thrownBottles, pickedBottles, userPoints, achievements, repliedCount] = await Promise.all([
+        const [stats, thrownBottles, pickedBottles, userPoints, achievements] = await Promise.all([
             dbGet(`SELECT * FROM user_stats WHERE user_id = ?`, [userId]) as Promise<UserStats | null>,
             this.getUserBottles(userId, 5),
             this.getPickedBottles(userId, 5),
             PointsService.getUserPoints(userId),
-            PointsService.getUserAchievements(userId),
-            // 获取用户回复的瓶子数量
-            dbGet(`SELECT COUNT(*) as count FROM replies WHERE sender_id = ?`, [userId]) as Promise<{ count: number }>
+            PointsService.getUserAchievements(userId)
         ]);
 
         // 构造完整的统计数据，确保字段匹配前端期望
@@ -421,10 +415,11 @@ export class BottleService {
             user_id: userId,
             bottles_thrown: stats?.bottles_thrown || 0,
             bottles_picked: stats?.bottles_picked || 0,
-            bottles_replied: repliedCount?.count || 0,  // 新增：回复的瓶子数量
-            points_earned: userPoints?.total_points || 0,  // 新增：获得的总积分
+            bottles_replied: stats?.bottles_replied || 0,  // 从数据库表获取
+            points_earned: userPoints?.total_points || 0,  // 用户的总积分
             last_throw_time: stats?.last_throw_time,
-            last_pick_time: stats?.last_pick_time
+            last_pick_time: stats?.last_pick_time,
+            last_reply_time: stats?.last_reply_time
         };
 
         return {
@@ -676,5 +671,21 @@ export class BottleService {
             logger.error('撤回漂流瓶失败:', error);
             throw error;
         }
+    }
+
+    // 更新用户统计 - 新增回复统计逻辑
+    private static async updateUserStatsForReply(userId: number, username?: string): Promise<void> {
+        const field = 'bottles_replied';
+        const timeField = 'last_reply_time';
+        
+        await dbRun(`
+            INSERT OR REPLACE INTO user_stats (user_id, username, ${field}, ${timeField})
+            VALUES (
+                ?, 
+                COALESCE(?, (SELECT username FROM user_stats WHERE user_id = ?)),
+                COALESCE((SELECT ${field} FROM user_stats WHERE user_id = ?), 0) + 1,
+                ?
+            )
+        `, [userId, username, userId, userId, getCurrentTimestamp()]);
     }
 } 

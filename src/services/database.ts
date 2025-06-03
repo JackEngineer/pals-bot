@@ -44,8 +44,10 @@ export interface UserStats {
     username?: string;
     bottles_thrown: number;
     bottles_picked: number;
+    bottles_replied?: number;  // 新增：回复的瓶子数量
     last_throw_time?: string;
     last_pick_time?: string;
+    last_reply_time?: string;   // 新增：最后回复时间
 }
 
 export const setupDatabase = async (): Promise<void> => {
@@ -170,8 +172,10 @@ const initializeTables = async (): Promise<void> => {
                 username TEXT,
                 bottles_thrown INTEGER DEFAULT 0,
                 bottles_picked INTEGER DEFAULT 0,
+                bottles_replied INTEGER DEFAULT 0,
                 last_throw_time DATETIME,
-                last_pick_time DATETIME
+                last_pick_time DATETIME,
+                last_reply_time DATETIME
             )
         `);
 

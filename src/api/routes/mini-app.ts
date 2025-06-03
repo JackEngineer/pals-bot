@@ -52,31 +52,17 @@ router.get('/user/profile', async (req, res) => {
       )
     ]);
 
-    // 获取用户回复数量统计
-    const repliedCount = await PerformanceMonitor.monitorAsync(
-      () => dbGet(`SELECT COUNT(*) as count FROM replies WHERE sender_id = ?`, [userId]),
-      'miniapp_user_replies'
-    ) as { count: number };
-
-    // 确保统计数据包含前端期望的字段
-    const completeStats = {
-      ...userStats.stats,
-      bottles_replied: repliedCount?.count || 0,
-      points_earned: pointsInfo?.total_points || 0
-    };
-
     logger.info('📊 用户数据获取完成:', {
       userId,
       hasStats: !!userStats,
       hasPoints: !!pointsInfo,
-      bottles_replied: completeStats.bottles_replied,
-      points_earned: completeStats.points_earned,
+      stats: userStats.stats,
       executionTime: Date.now() - startTime
     });
 
     const responseData = {
       user: req.user,
-      stats: completeStats,
+      stats: userStats.stats,  // 直接使用 BottleService 返回的完整统计数据
       points: pointsInfo,
       telegram_data: req.telegramData
     };

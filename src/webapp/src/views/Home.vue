@@ -10,21 +10,33 @@
     <div class="card">
       <h3>📊 我的统计</h3>
       <div class="stats-grid">
-        <div class="stat-item">
+        <div class="stat-item" :class="{ 'stat-item-zero': (userStore.userStats?.bottles_thrown || 0) === 0 }">
           <div class="stat-value">{{ userStore.userStats?.bottles_thrown || 0 }}</div>
           <div class="stat-label">投放的瓶子</div>
+          <div v-if="(userStore.userStats?.bottles_thrown || 0) === 0" class="stat-hint">
+            还没有投放过呢
+          </div>
         </div>
-        <div class="stat-item">
+        <div class="stat-item" :class="{ 'stat-item-zero': (userStore.userStats?.bottles_picked || 0) === 0 }">
           <div class="stat-value">{{ userStore.userStats?.bottles_picked || 0 }}</div>
           <div class="stat-label">捡到的瓶子</div>
+          <div v-if="(userStore.userStats?.bottles_picked || 0) === 0" class="stat-hint">
+            试试捡拾功能吧
+          </div>
         </div>
-        <div class="stat-item">
+        <div class="stat-item" :class="{ 'stat-item-zero': (userStore.userStats?.bottles_replied || 0) === 0 }">
           <div class="stat-value">{{ userStore.userStats?.bottles_replied || 0 }}</div>
           <div class="stat-label">回复的瓶子</div>
+          <div v-if="(userStore.userStats?.bottles_replied || 0) === 0" class="stat-hint">
+            回复让世界更精彩
+          </div>
         </div>
         <div class="stat-item">
-          <div class="stat-value">{{ userStore.userStats?.points_earned || 0 }}</div>
+          <div class="stat-value">{{ userStore.userPoints?.total_points || 0 }}</div>
           <div class="stat-label">获得积分</div>
+          <div v-if="(userStore.userPoints?.total_points || 0) === 0" class="stat-hint">
+            完成操作获得积分
+          </div>
         </div>
       </div>
     </div>
@@ -165,6 +177,19 @@ const onBottleReply = () => {
 
 .stat-item {
   text-align: center;
+  position: relative;
+  padding: 0.5rem;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.stat-item-zero {
+  opacity: 0.7;
+}
+
+.stat-item-zero:hover {
+  opacity: 1;
+  background-color: var(--tg-theme-section-bg-color, rgba(0, 123, 255, 0.05));
 }
 
 .stat-value {
@@ -173,10 +198,22 @@ const onBottleReply = () => {
   color: var(--tg-theme-button-color);
 }
 
+.stat-item-zero .stat-value {
+  color: var(--tg-theme-hint-color);
+}
+
 .stat-label {
   font-size: 0.9rem;
   color: var(--tg-theme-hint-color);
   margin-top: 0.2rem;
+}
+
+.stat-hint {
+  font-size: 0.75rem;
+  color: var(--tg-theme-hint-color);
+  margin-top: 0.3rem;
+  font-style: italic;
+  opacity: 0.8;
 }
 
 .action-buttons {
