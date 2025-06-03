@@ -7,6 +7,48 @@ import { formatBottleMessage } from '../utils/message-formatter';
 import { logger } from '../utils/logger';
 import { ExtendedContext, pendingReplies, currentlyViewing } from './command-state';
 
+/**
+ * 安全回答回调查询，处理超时错误
+ */
+async function safeAnswerCbQuery(ctx: ExtendedContext, text?: string): Promise<void> {
+    try {
+        await ctx.answerCbQuery(text);
+    } catch (error: any) {
+        // 忽略超时错误，但记录其他类型的错误
+        if (error.code === 400 && error.description?.includes('query is too old')) {
+            logger.warn('回调查询已过期，忽略该错误');
+        } else {
+            logger.error('回答回调查询失败:', error);
+            // 对于其他错误，尝试不带文本的简单回应
+            try {
+                await ctx.answerCbQuery();
+            } catch (secondError) {
+                logger.error('二次回答回调查询也失败:', secondError);
+            }
+        }
+    }
+}
+
+/**
+ * 安全编辑消息回复标记，处理消息编辑失败的情况
+ */
+async function safeEditMessageReplyMarkup(ctx: ExtendedContext, replyMarkup: any): Promise<void> {
+    try {
+        await ctx.editMessageReplyMarkup(replyMarkup);
+    } catch (error: any) {
+        // 忽略消息太旧或已被删除的错误
+        if (error.code === 400 && (
+            error.description?.includes('message is not modified') ||
+            error.description?.includes('message to edit not found') ||
+            error.description?.includes('query is too old')
+        )) {
+            logger.warn('消息编辑失败，可能消息已过期或被删除:', error.description);
+        } else {
+            logger.error('编辑消息回复标记失败:', error);
+        }
+    }
+}
+
 export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
     // 处理回调查询（按钮点击）
     bot.on('callback_query', async (ctx) => {
@@ -16,7 +58,7 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
             const callbackData = callbackQuery.data;
             
             if (!callbackData) {
-                await ctx.answerCbQuery('❌ 无效的操作');
+                await safeAnswerCbQuery(ctx, '❌ 无效的操作');
                 return;
             }
 
@@ -24,7 +66,7 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
             const username = ctx.from?.username;
 
             if (!userId) {
-                await ctx.answerCbQuery('❌ 无法获取用户信息');
+                await safeAnswerCbQuery(ctx, '❌ 无法获取用户信息');
                 return;
             }
 
@@ -34,10 +76,10 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
                 const bottleId = parts[2];
                 const replierId = parseInt(parts[3]);
                 
-                await ctx.answerCbQuery();
+                await safeAnswerCbQuery(ctx);
                 
                 // 编辑原消息，移除按钮
-                await ctx.editMessageReplyMarkup({
+                await safeEditMessageReplyMarkup(ctx, {
                     inline_keyboard: []
                 });
                 
@@ -67,10 +109,10 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
 
             // 忽略回复按钮
             if (callbackData.startsWith('ignore_reply_')) {
-                await ctx.answerCbQuery('已忽略这次回复');
+                await safeAnswerCbQuery(ctx, '已忽略这次回复');
                 
                 // 编辑原消息，移除按钮
-                await ctx.editMessageReplyMarkup({
+                await safeEditMessageReplyMarkup(ctx, {
                     inline_keyboard: []
                 });
                 
@@ -84,10 +126,10 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
                 const bottleId = parts[2];
                 const initiatorId = parseInt(parts[3]);
                 
-                await ctx.answerCbQuery();
+                await safeAnswerCbQuery(ctx);
                 
                 // 编辑原消息，移除按钮
-                await ctx.editMessageReplyMarkup({
+                await safeEditMessageReplyMarkup(ctx, {
                     inline_keyboard: []
                 });
                 
@@ -122,10 +164,10 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
                 const parts = callbackData.split('_');
                 const initiatorId = parseInt(parts[3]);
                 
-                await ctx.answerCbQuery();
+                await safeAnswerCbQuery(ctx);
                 
                 // 编辑原消息，移除按钮
-                await ctx.editMessageReplyMarkup({
+                await safeEditMessageReplyMarkup(ctx, {
                     inline_keyboard: []
                 });
                 
@@ -151,10 +193,10 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
             if (callbackData.startsWith('add_friend_')) {
                 const sessionId = callbackData.replace('add_friend_', '');
                 
-                await ctx.answerCbQuery();
+                await safeAnswerCbQuery(ctx);
                 
                 // 编辑原消息，移除按钮
-                await ctx.editMessageReplyMarkup({
+                await safeEditMessageReplyMarkup(ctx, {
                     inline_keyboard: []
                 });
                 
@@ -215,10 +257,10 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
             if (callbackData.startsWith('end_chat_')) {
                 const sessionId = callbackData.replace('end_chat_', '');
                 
-                await ctx.answerCbQuery();
+                await safeAnswerCbQuery(ctx);
                 
                 // 编辑原消息，移除按钮
-                await ctx.editMessageReplyMarkup({
+                await safeEditMessageReplyMarkup(ctx, {
                     inline_keyboard: []
                 });
                 
@@ -259,10 +301,10 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
             if (callbackData.startsWith('accept_friend_')) {
                 const requestId = parseInt(callbackData.replace('accept_friend_', ''));
                 
-                await ctx.answerCbQuery();
+                await safeAnswerCbQuery(ctx);
                 
                 // 编辑原消息，移除按钮
-                await ctx.editMessageReplyMarkup({
+                await safeEditMessageReplyMarkup(ctx, {
                     inline_keyboard: []
                 });
                 
@@ -305,10 +347,10 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
             if (callbackData.startsWith('reject_friend_')) {
                 const requestId = parseInt(callbackData.replace('reject_friend_', ''));
                 
-                await ctx.answerCbQuery();
+                await safeAnswerCbQuery(ctx);
                 
                 // 编辑原消息，移除按钮
-                await ctx.editMessageReplyMarkup({
+                await safeEditMessageReplyMarkup(ctx, {
                     inline_keyboard: []
                 });
                 
@@ -343,7 +385,7 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
             if (callbackData.startsWith('private_chat_')) {
                 const friendId = parseInt(callbackData.replace('private_chat_', ''));
                 
-                await ctx.answerCbQuery();
+                await safeAnswerCbQuery(ctx);
                 
                 try {
                     // 检查是否为好友
@@ -373,7 +415,7 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
             if (callbackData.startsWith('view_profile_')) {
                 const friendId = parseInt(callbackData.replace('view_profile_', ''));
                 
-                await ctx.answerCbQuery();
+                await safeAnswerCbQuery(ctx);
                 
                 try {
                     // 检查是否为好友
@@ -404,7 +446,7 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
             if (callbackData.startsWith('remove_friend_')) {
                 const friendId = parseInt(callbackData.replace('remove_friend_', ''));
                 
-                await ctx.answerCbQuery();
+                await safeAnswerCbQuery(ctx);
                 
                 try {
                     // 检查是否为好友
@@ -435,10 +477,10 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
                 const bottleId = callbackData.replace('reply_', '');
                 
                 // 回答回调查询
-                await ctx.answerCbQuery();
+                await safeAnswerCbQuery(ctx);
                 
                 // 编辑原消息，移除按钮
-                await ctx.editMessageReplyMarkup({
+                await safeEditMessageReplyMarkup(ctx, {
                     inline_keyboard: []
                 });
                 
@@ -469,10 +511,10 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
                 try {
                     await BottleService.discardBottle(userId, bottleId);
                     
-                    await ctx.answerCbQuery('🗑️ 瓶子已丢弃');
+                    await safeAnswerCbQuery(ctx, '🗑️ 瓶子已丢弃');
                     
                     // 编辑原消息，移除按钮
-                    await ctx.editMessageReplyMarkup({
+                    await safeEditMessageReplyMarkup(ctx, {
                         inline_keyboard: []
                     });
                     
@@ -491,7 +533,7 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
                     );
                     
                 } catch (error) {
-                    await ctx.answerCbQuery('❌ 丢弃失败');
+                    await safeAnswerCbQuery(ctx, '❌ 丢弃失败');
                     await ctx.reply(`❌ 丢弃失败: ${(error as Error).message}`);
                 }
                 
@@ -502,10 +544,10 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
 
             // 继续捡拾按钮（修改逻辑：也会丢弃当前瓶子）
             if (callbackData === 'pick_another') {
-                await ctx.answerCbQuery();
+                await safeAnswerCbQuery(ctx);
                 
                 // 编辑原消息，移除按钮
-                await ctx.editMessageReplyMarkup({
+                await safeEditMessageReplyMarkup(ctx, {
                     inline_keyboard: []
                 });
 
@@ -580,11 +622,11 @@ export function setupCallbackHandlers(bot: Telegraf<ExtendedContext>) {
                 return;
             }
 
-            await ctx.answerCbQuery('❌ 未知的操作');
+            await safeAnswerCbQuery(ctx, '❌ 未知的操作');
 
         } catch (error) {
             logger.error('处理回调查询失败:', error);
-            await ctx.answerCbQuery('❌ 操作失败，请稍后重试');
+            await safeAnswerCbQuery(ctx, '❌ 操作失败，请稍后重试');
         }
     });
 
