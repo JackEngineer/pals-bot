@@ -3,6 +3,7 @@ module.exports = {
     {
       name: 'pals-bot',
       script: 'dist/index.js',
+      exec_mode: 'fork',
       instances: 1,
       autorestart: true,
       watch: false,
@@ -25,7 +26,9 @@ module.exports = {
       merge_logs: true,
       max_restarts: 10,
       min_uptime: '10s',
-      restart_delay: 4000
+      restart_delay: 4000,
+      kill_timeout: 5000,
+      listen_timeout: 8000
     }
   ]
 }; 

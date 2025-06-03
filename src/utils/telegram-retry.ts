@@ -30,76 +30,167 @@ export class TelegramRetryHandler {
   private static readonly CIRCUIT_BREAKER_THRESHOLD = 5; // 5次失败后熔断
   private static readonly CIRCUIT_BREAKER_RESET_TIME = 60000; // 1分钟后尝试恢复
 
+  private static readonly MAX_RETRIES = 3;
+  private static readonly RETRY_DELAY = 1000; // 1秒
+  private static readonly NETWORK_ERROR_CODES = [
+    'ECONNRESET',
+    'ECONNREFUSED', 
+    'ETIMEDOUT',
+    'ENETDOWN',
+    'ENETUNREACH',
+    'EHOSTDOWN',
+    'EHOSTUNREACH'
+  ];
+
   /**
    * 带重试机制的 Telegram API 调用
    */
   static async executeWithRetry<T>(
     operation: () => Promise<T>,
     operationName: string,
-    options: Partial<RetryOptions> = {}
+    retries: number = this.MAX_RETRIES
   ): Promise<T> {
-    const config = { ...this.defaultOptions, ...options };
-    
-    // 检查熔断器状态
-    if (this.isCircuitBreakerOpen(operationName)) {
-      const error = new Error(`熔断器开启: ${operationName} 暂时不可用`);
-      logger.warn(error.message);
-      throw error;
-    }
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        const isLastAttempt = attempt === retries;
+        const isNetworkError = this.isNetworkError(error);
+        const shouldRetry = this.shouldRetry(error, attempt, retries);
 
-    return PerformanceMonitor.monitorAsync(
-      async () => {
-        let lastError: Error;
+        // 记录错误信息
+        logger.warn(`${operationName} 失败 (尝试 ${attempt}/${retries}):`, {
+          error: error.message,
+          code: error.code,
+          isNetworkError,
+          willRetry: shouldRetry
+        });
 
-        for (let attempt = 1; attempt <= config.maxRetries; attempt++) {
-          try {
-            // 创建超时Promise
-            const timeoutPromise = new Promise<never>((_, reject) => {
-              setTimeout(() => reject(new Error('Operation timeout')), config.timeoutMs);
-            });
-
-            // 执行操作，带超时控制
-            const result = await Promise.race([operation(), timeoutPromise]);
-            
-            // 成功时重置熔断器
-            this.resetCircuitBreaker(operationName);
-            
-            if (attempt > 1) {
-              logger.info(`${operationName} 在第${attempt}次尝试后成功`);
-            }
-            
-            return result;
-          } catch (error) {
-            lastError = error as Error;
-            
-            // 记录失败到熔断器
-            this.recordFailure(operationName);
-            
-            // 判断是否需要重试
-            if (!this.shouldRetry(error, attempt, config.maxRetries)) {
-              throw error;
-            }
-
-            // 计算延迟时间 (指数退避 + 抖动)
-            const baseDelay = config.baseDelay * Math.pow(2, attempt - 1);
-            const jitter = Math.random() * 0.1 * baseDelay; // 10%抖动
-            const delay = Math.min(baseDelay + jitter, config.maxDelay);
-
-            logger.warn(
-              `${operationName} 第${attempt}次尝试失败: ${lastError.message}, ` +
-              `${delay}ms后重试...`
-            );
-
-            // 延迟后重试
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
+        if (!shouldRetry || isLastAttempt) {
+          // 最后一次尝试失败，抛出错误
+          throw new Error(`${operationName} 最终失败: ${error.message}`);
         }
 
-        logger.error(`${operationName} 在${config.maxRetries}次尝试后仍然失败`);
-        throw lastError!;
-      },
-      `telegram_retry_${operationName.replace(/\s+/g, '_')}`
-    );
+        // 等待后重试
+        const delay = this.calculateDelay(attempt, isNetworkError);
+        logger.info(`等待 ${delay}ms 后重试...`);
+        await this.sleep(delay);
+      }
+    }
+
+    throw new Error(`${operationName} 重试次数已用完`);
+  }
+
+  /**
+   * 判断是否为网络错误
+   */
+  private static isNetworkError(error: any): boolean {
+    if (!error) return false;
+    
+    // 检查错误码
+    if (error.code && this.NETWORK_ERROR_CODES.includes(error.code)) {
+      return true;
+    }
+
+    // 检查错误消息
+    const message = error.message?.toLowerCase() || '';
+    return message.includes('network') || 
+           message.includes('connection') || 
+           message.includes('timeout') ||
+           message.includes('reset') ||
+           message.includes('refused');
+  }
+
+  /**
+   * 判断是否应该重试
+   */
+  private static shouldRetry(error: any, attempt: number, maxRetries: number): boolean {
+    if (attempt >= maxRetries) return false;
+
+    // 网络错误总是重试
+    if (this.isNetworkError(error)) return true;
+
+    // Telegram API特定错误处理
+    if (error.response) {
+      const status = error.response.status;
+      
+      // 4xx客户端错误一般不重试
+      if (status >= 400 && status < 500) {
+        // 但429 Too Many Requests需要重试
+        return status === 429;
+      }
+      
+      // 5xx服务器错误重试
+      if (status >= 500) return true;
+    }
+
+    // 其他未知错误重试
+    return true;
+  }
+
+  /**
+   * 计算延迟时间（指数退避）
+   */
+  private static calculateDelay(attempt: number, isNetworkError: boolean): number {
+    const baseDelay = isNetworkError ? this.RETRY_DELAY * 2 : this.RETRY_DELAY;
+    return baseDelay * Math.pow(2, attempt - 1) + Math.random() * 1000;
+  }
+
+  /**
+   * 睡眠指定毫秒
+   */
+  private static sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 安全的Telegram API调用封装
+   */
+  static async safeTelegramCall<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    fallbackValue?: T
+  ): Promise<T | null> {
+    try {
+      return await this.executeWithRetry(operation, operationName);
+    } catch (error) {
+      logger.error(`Telegram API调用最终失败: ${operationName}`, error);
+      
+      if (fallbackValue !== undefined) {
+        logger.info(`使用fallback值: ${fallbackValue}`);
+        return fallbackValue;
+      }
+      
+      return null;
+    }
+  }
+
+  /**
+   * 批量API调用（控制并发）
+   */
+  static async batchExecute<T>(
+    operations: (() => Promise<T>)[],
+    operationName: string,
+    concurrency: number = 3
+  ): Promise<(T | null)[]> {
+    const results: (T | null)[] = [];
+    
+    for (let i = 0; i < operations.length; i += concurrency) {
+      const batch = operations.slice(i, i + concurrency);
+      const batchPromises = batch.map((op, index) => 
+        this.safeTelegramCall(op, `${operationName}[${i + index}]`)
+      );
+      
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+      
+      // 批次间添加小延迟，避免频率限制
+      if (i + concurrency < operations.length) {
+        await this.sleep(100);
+      }
+    }
+    
+    return results;
   }
 
   /**
@@ -167,59 +258,6 @@ export class TelegramRetryHandler {
   }
 
   /**
-   * 判断错误是否应该重试
-   */
-  private static shouldRetry(error: any, attempt: number, maxRetries: number): boolean {
-    // 最后一次尝试不重试
-    if (attempt >= maxRetries) {
-      return false;
-    }
-
-    // 网络相关错误应该重试
-    const networkErrors = [
-      'ECONNRESET',
-      'ECONNREFUSED', 
-      'ETIMEDOUT',
-      'ENOTFOUND',
-      'ECONNABORTED',
-      'EPIPE',
-      'EHOSTUNREACH'
-    ];
-
-    const errorMessage = error?.message || '';
-    const errorCode = error?.code || '';
-
-    // 检查网络错误
-    if (networkErrors.some(netErr => 
-      errorMessage.includes(netErr) || errorCode === netErr
-    )) {
-      return true;
-    }
-
-    // Telegram API 限流错误
-    if (errorMessage.includes('Too Many Requests') || errorCode === 429) {
-      return true;
-    }
-
-    // 超时错误
-    if (errorMessage.includes('timeout') || errorMessage.includes('Operation timeout')) {
-      return true;
-    }
-
-    // 5xx 服务器错误
-    if (error?.response?.status >= 500) {
-      return true;
-    }
-
-    // FetchError 或 TelegramError
-    if (error?.name === 'FetchError' || error?.name === 'TelegramError') {
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
    * 包装 NotificationService 的方法
    */
   static async sendMessageWithRetry(
@@ -231,12 +269,7 @@ export class TelegramRetryHandler {
       await this.executeWithRetry(
         sendFunction,
         `${operationName} to user ${userId}`,
-        {
-          maxRetries: 3,
-          baseDelay: 1000,
-          maxDelay: 8000,
-          timeoutMs: 30000
-        }
+        3 // 重试3次
       );
       return true;
     } catch (error) {
@@ -250,9 +283,8 @@ export class TelegramRetryHandler {
    */
   static async sendBatchWithRetry<T>(
     operations: Array<{ fn: () => Promise<T>; name: string; id: string | number }>,
-    options: Partial<RetryOptions> = {}
+    maxRetries: number = 3
   ): Promise<{ success: T[]; failed: Array<{ id: string | number; error: Error }> }> {
-    const config = { ...this.defaultOptions, ...options };
     const success: T[] = [];
     const failed: Array<{ id: string | number; error: Error }> = [];
 
@@ -266,7 +298,7 @@ export class TelegramRetryHandler {
         const result = await this.executeWithRetry(
           operation.fn,
           `${operation.name} (${operation.id})`,
-          config
+          maxRetries
         );
         success.push(result);
         
@@ -295,12 +327,7 @@ export class TelegramRetryHandler {
       await this.executeWithRetry(
         () => ctx.reply(message, options),
         `reply to user ${ctx.from?.id || 'unknown'}`,
-        {
-          maxRetries: 2,
-          baseDelay: 500,
-          maxDelay: 3000,
-          timeoutMs: 15000
-        }
+        2 // 重试2次
       );
       return true;
     } catch (error) {
@@ -321,12 +348,7 @@ export class TelegramRetryHandler {
       await this.executeWithRetry(
         () => ctx.replyWithPhoto(photo, options),
         `replyWithPhoto to user ${ctx.from?.id || 'unknown'}`,
-        {
-          maxRetries: 2,
-          baseDelay: 500,
-          maxDelay: 3000,
-          timeoutMs: 15000
-        }
+        2 // 重试2次
       );
       return true;
     } catch (error) {
@@ -347,12 +369,7 @@ export class TelegramRetryHandler {
       await this.executeWithRetry(
         () => ctx.replyWithVoice(voice, options),
         `replyWithVoice to user ${ctx.from?.id || 'unknown'}`,
-        {
-          maxRetries: 2,
-          baseDelay: 500,
-          maxDelay: 3000,
-          timeoutMs: 15000
-        }
+        2 // 重试2次
       );
       return true;
     } catch (error) {
@@ -373,12 +390,7 @@ export class TelegramRetryHandler {
       await this.executeWithRetry(
         () => ctx.replyWithVideo(video, options),
         `replyWithVideo to user ${ctx.from?.id || 'unknown'}`,
-        {
-          maxRetries: 2,
-          baseDelay: 500,
-          maxDelay: 3000,
-          timeoutMs: 15000
-        }
+        2 // 重试2次
       );
       return true;
     } catch (error) {
@@ -399,12 +411,7 @@ export class TelegramRetryHandler {
       await this.executeWithRetry(
         () => ctx.replyWithDocument(document, options),
         `replyWithDocument to user ${ctx.from?.id || 'unknown'}`,
-        {
-          maxRetries: 2,
-          baseDelay: 500,
-          maxDelay: 3000,
-          timeoutMs: 15000
-        }
+        2 // 重试2次
       );
       return true;
     } catch (error) {
@@ -425,12 +432,7 @@ export class TelegramRetryHandler {
       await this.executeWithRetry(
         () => ctx.answerCbQuery(text, options),
         `answerCbQuery to user ${ctx.from?.id || 'unknown'}`,
-        {
-          maxRetries: 2,
-          baseDelay: 500,
-          maxDelay: 3000,
-          timeoutMs: 15000
-        }
+        2 // 重试2次
       );
       return true;
     } catch (error) {
@@ -450,12 +452,7 @@ export class TelegramRetryHandler {
       await this.executeWithRetry(
         () => ctx.editMessageReplyMarkup(markup),
         `editMessageReplyMarkup to user ${ctx.from?.id || 'unknown'}`,
-        {
-          maxRetries: 2,
-          baseDelay: 500,
-          maxDelay: 3000,
-          timeoutMs: 15000
-        }
+        2 // 重试2次
       );
       return true;
     } catch (error) {

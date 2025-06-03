@@ -427,12 +427,7 @@ class PalsBot {
             const me = await TelegramRetryHandler.executeWithRetry(
                 () => this.bot.telegram.getMe(),
                 'initial Telegram connection test',
-                {
-                    maxRetries: 5,
-                    baseDelay: 2000,
-                    maxDelay: 10000,
-                    timeoutMs: 30000
-                }
+                5 // 重试5次
             );
             logger.info(`机器人信息: @${me.username} (${me.first_name})`);
 

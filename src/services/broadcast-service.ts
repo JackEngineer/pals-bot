@@ -406,12 +406,7 @@ export class BroadcastService {
                 messageId = await TelegramRetryHandler.executeWithRetry(
                     sendOperation,
                     `broadcast to group ${group.chat_id}`,
-                    {
-                        maxRetries: 2, // 广播重试次数较少，避免延迟过长
-                        baseDelay: 1000,
-                        maxDelay: 5000,
-                        timeoutMs: 20000
-                    }
+                    2 // 广播重试次数较少，避免延迟过长
                 );
 
                 // 记录成功日志
@@ -553,12 +548,7 @@ export class BroadcastService {
             await TelegramRetryHandler.executeWithRetry(
                 sendOperation,
                 `sendBroadcastToGroup ${chatId}`,
-                {
-                    maxRetries: 3,
-                    baseDelay: 1000,
-                    maxDelay: 8000,
-                    timeoutMs: 30000
-                }
+                3 // 重试3次
             );
 
             return true;

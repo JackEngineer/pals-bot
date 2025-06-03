@@ -81,6 +81,19 @@ export class BottleService {
     // 随机捡拾漂流瓶
     static async pickBottle(userId: number): Promise<Bottle | null> {
         try {
+            // 🆕 首先检查是否能成功捡到瓶子（概率检查）
+            const canPickBottle = await this.checkPickBottleProbability(userId);
+            if (!canPickBottle) {
+                // 捡瓶子失败，但仍然给少量积分作为安慰奖
+                await PointsService.addPoints(
+                    userId,
+                    1, // 安慰奖积分
+                    'pick_attempt',
+                    '尝试捡拾漂流瓶'
+                );
+                return null;
+            }
+
             // 在事务中执行核心数据库操作
             const result = await dbExecuteInTransaction(async () => {
                 // 查找可用的漂流瓶（排除自己投放的和自己已丢弃的）
@@ -180,6 +193,53 @@ export class BottleService {
         } catch (error) {
             logger.error('捡拾漂流瓶失败:', error);
             throw error;
+        }
+    }
+
+    // 🆕 检查捡瓶子成功概率（基于用户等级）
+    private static async checkPickBottleProbability(userId: number): Promise<boolean> {
+        try {
+            // 获取用户积分和等级信息
+            const userPoints = await PointsService.getUserPoints(userId);
+            const userLevel = userPoints.level;
+
+            // 基础概率配置（基于等级）
+            const baseProbabilityConfig = {
+                1: 0.60, // 新手水手 - 60%
+                2: 0.70, // 见习船员 - 70%
+                3: 0.78, // 资深航海者 - 78%
+                4: 0.85, // 海洋探索家 - 85%
+                5: 0.90  // 漂流瓶大师 - 90%
+            };
+
+            let successProbability = baseProbabilityConfig[userLevel as keyof typeof baseProbabilityConfig] || 0.60;
+
+            // 🍀 检查幸运加成特权
+            const hasLuckyBoost = await PointsService.checkUserPurchase(userId, 'lucky_boost_24h');
+            if (hasLuckyBoost) {
+                successProbability += 0.10; // 幸运加成增加10%概率
+                successProbability = Math.min(successProbability, 0.95); // 最高不超过95%
+            }
+
+            // 🎯 VIP会员小幅概率加成
+            const isVip = await PointsService.checkVipStatus(userId);
+            if (isVip) {
+                successProbability += 0.03; // VIP增加3%概率
+                successProbability = Math.min(successProbability, 0.95); // 最高不超过95%
+            }
+
+            // 生成随机数并判断是否成功
+            const random = Math.random();
+            const success = random <= successProbability;
+
+            // 记录捡拾尝试日志（用于数据分析）
+            logger.info(`捡瓶子概率检查 - 用户: ${userId}, 等级: Lv.${userLevel}, 概率: ${(successProbability * 100).toFixed(1)}%, 随机数: ${random.toFixed(3)}, 结果: ${success ? '成功' : '失败'}`);
+
+            return success;
+        } catch (error) {
+            logger.error('检查捡瓶子概率失败:', error);
+            // 出错时返回最低概率
+            return Math.random() <= 0.50;
         }
     }
 

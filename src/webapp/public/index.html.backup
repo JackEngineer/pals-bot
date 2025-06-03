@@ -518,16 +518,47 @@
         // 捡拾漂流瓶
         async function pickBottle() {
             try {
+                // 显示加载状态
+                window.Telegram.WebApp.showAlert('🌊 正在大海中搜寻漂流瓶...');
+                
                 const bottle = await apiRequest('/bottles/pick', {
                     method: 'POST'
                 });
                 
                 if (!bottle) {
-                    window.Telegram.WebApp.showAlert('暂时没有新的漂流瓶');
+                    // 🆕 获取用户等级信息显示个性化提示
+                    const userData = await apiRequest('/user/profile');
+                    const userLevel = userData.points?.level || 1;
+                    const levelName = userData.points?.level_name || '🌊 新手水手';
+                    
+                    // 根据等级显示不同的鼓励信息
+                    let encouragementMessage = '';
+                    if (userLevel === 1) {
+                        encouragementMessage = '🌱 新手水手的海洋探索之路才刚刚开始！提升等级可以增加捡到瓶子的概率哦～';
+                    } else if (userLevel === 2) {
+                        encouragementMessage = '⚓ 见习船员继续努力！你的捡拾技能正在提升中～';
+                    } else if (userLevel === 3) {
+                        encouragementMessage = '🚢 资深航海者运气不佳，但经验丰富！再试几次一定能捡到好瓶子～';
+                    } else if (userLevel === 4) {
+                        encouragementMessage = '🏴‍☠️ 海洋探索家暂时空手而归...不过凭你的实力，下次一定能有收获！';
+                    } else {
+                        encouragementMessage = '👑 漂流瓶大师偶尔也会遇到波涛汹涌的时候～坚持下去，传说中的珍稀瓶子在等着你！';
+                    }
+                    
+                    window.Telegram.WebApp.showAlert(
+                        `🌊 这次没有捡到漂流瓶...\n\n${encouragementMessage}\n\n` +
+                        `🏆 你的等级: ${levelName}\n💡 获得安慰奖: +1积分\n\n` +
+                        `💪 想要提高成功率？\n• 继续投放和回复瓶子提升等级\n• 在商店购买🍀幸运加成道具\n• 成为💎VIP会员享受概率加成`
+                    );
+                    
+                    // 刷新用户数据
+                    appState.userStats = userData.stats;
+                    appState.userPoints = userData.points;
+                    renderApp();
                     return;
                 }
                 
-                const reply = confirm(`捡到漂流瓶：\n\n${bottle.content}\n\n是否要回复？`);
+                const reply = confirm(`🍾 捡到漂流瓶！\n\n${bottle.content}\n\n💰 获得积分: +5\n\n是否要回复？`);
                 
                 if (reply) {
                     const replyContent = prompt('请输入回复内容:');
@@ -536,7 +567,7 @@
                             method: 'POST',
                             body: { content: replyContent }
                         });
-                        window.Telegram.WebApp.showAlert('回复发送成功！');
+                        window.Telegram.WebApp.showAlert('回复发送成功！获得回复积分: +8');
                     }
                 }
                 
